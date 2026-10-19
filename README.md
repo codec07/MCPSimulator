@@ -1,10 +1,16 @@
 # MCP Simulator
 
+[![Try it live](https://img.shields.io/badge/try_it_live-mcpsimulator.netlify.app-00C7B7?logo=netlify&logoColor=white)](https://mcpsimulator.netlify.app/)
 ![Next.js](https://img.shields.io/badge/Next.js-16.4.2-000000?logo=nextdotjs&logoColor=white)
 ![React](https://img.shields.io/badge/React-19.3-087EA4?logo=react&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-38BDF8?logo=tailwindcss&logoColor=white)
 ![Backend](https://img.shields.io/badge/backend-none-brightgreen)
+
+> **▶ Try it out first → [mcpsimulator.netlify.app](https://mcpsimulator.netlify.app/)**
+>
+> Live on Netlify. No signup, no install, and nothing leaves your browser.
+> Want it running locally instead? Jump to [Quick start](#quick-start).
 
 A no-signup, offline, single-player simulator for the economics of building
 software with frontier models and rented GPUs.
