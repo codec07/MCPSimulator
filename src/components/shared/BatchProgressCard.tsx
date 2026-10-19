@@ -8,7 +8,6 @@ import { Progress } from "@/components/ui/Progress";
 import { MODEL_BY_ID } from "@/data/models";
 import { PROJECT_BY_ID } from "@/data/projects";
 import {
-  PAYOUT_MULT_BY_TIER,
   runHoursConsumed,
   runProgress,
   type BuildGroup,
@@ -196,14 +195,14 @@ export function BatchProgressCard({
             icon="TrendingUp"
             label="batch payout"
             value={money2(totalPayout)}
-            hint={`${money2(head.payout)} per run`}
+            hint={`${money2(totalPayout / count)} avg per run`}
             tone="text-mint-400"
           />
           <Ledger
             icon="Layers"
-            label="multiplier"
-            value={multiplier(head.payoutMultiplier)}
-            hint={`tier bonus ${PAYOUT_MULT_BY_TIER[head.fleetTierAtLaunch].toFixed(2)}x`}
+            label="market heat"
+            value={multiplier(head.marketHeat)}
+            hint={`quality ${multiplier(head.payoutMultiplier)}`}
           />
         </div>
 

@@ -52,7 +52,7 @@ export default function DashboardPage() {
           icon="LayoutDashboard"
           accent="#7c5cff"
           title={title}
-          subtitle="Buy tokens and GPU hours, ship contracts from the catalog, then reinvest the payout — a faster rig reserves fewer of your hours and pays a premium on every invoice."
+          subtitle="Buy tokens and GPU hours, ship contracts from the catalog, then reinvest the payout — the client pays a flat fee, so a cheaper rig keeps more of it and a faster rig ships more of them."
           actions={
             <>
               <DashboardLink href="/buy" variant="secondary" icon="ShoppingCart">

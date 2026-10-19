@@ -31,7 +31,7 @@ const STEPS = [
     icon: "TrendingUp",
     tone: "text-solar-300",
     title: "Grow",
-    body: "Shipped work pays out. Higher difficulty pays more but needs a stronger fleet, and premium models earn a quality bonus on every invoice.",
+    body: "Shipped work pays out — a flat fee per contract, whatever it cost you. The first time you deliver one you earn its full markup; every copy after that cools the market toward a thin spot rate. There is no compound-interest button, only throughput.",
   },
 ] as const;
 

@@ -107,7 +107,12 @@ export default function MakePage() {
         if (!haystack.includes(needle)) continue;
       }
 
-      const projection = projectionOf(def, fleet, holdings);
+      const projection = projectionOf(
+        def,
+        fleet,
+        holdings,
+        completed[def.id] ?? 0,
+      );
       const readiness = runnabilityOf(def, projection, fleet.tier, computeHours);
 
       if (onlyRunnable) {
@@ -134,6 +139,7 @@ export default function MakePage() {
     return sortRows(found, sort);
   }, [
     category,
+    completed,
     computeHours,
     difficulties,
     fleet,
@@ -148,7 +154,12 @@ export default function MakePage() {
     const def: ProjectDef | undefined =
       openId === null ? undefined : PROJECT_BY_ID[openId];
     if (!def) return null;
-    const projection = projectionOf(def, fleet, holdings);
+    const projection = projectionOf(
+      def,
+      fleet,
+      holdings,
+      completed[def.id] ?? 0,
+    );
     return {
       def,
       projection,
@@ -161,7 +172,7 @@ export default function MakePage() {
         computeHours,
       ),
     };
-  }, [openId, fleet, holdings, computeHours]);
+  }, [openId, fleet, holdings, computeHours, completed]);
 
   const runnableNow = rows.filter((row) => row.readiness.ok).length;
   const dirty =

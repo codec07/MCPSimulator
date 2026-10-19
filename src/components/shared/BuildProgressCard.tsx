@@ -9,7 +9,6 @@ import { MODEL_BY_ID } from "@/data/models";
 import { cn } from "@/lib/cn";
 import { PROJECT_BY_ID } from "@/data/projects";
 import {
-  PAYOUT_MULT_BY_TIER,
   runHoursConsumed,
   runProgress,
   runRemaining,
@@ -173,14 +172,14 @@ export function BuildProgressCard({
             icon="TrendingUp"
             label={run.status === "done" ? "paid out" : "payout"}
             value={money2(run.status === "failed" ? run.payout * 0.3 : run.payout)}
-            hint={`base ${money2(run.payout / Math.max(0.01, run.payoutMultiplier))}`}
+            hint={`market ${multiplier(run.marketHeat)}`}
             tone={run.status === "failed" ? "text-ember-400" : "text-mint-400"}
           />
           <Ledger
             icon="Layers"
-            label="multiplier"
+            label="quality"
             value={multiplier(run.payoutMultiplier)}
-            hint={`tier bonus ${PAYOUT_MULT_BY_TIER[run.fleetTierAtLaunch].toFixed(2)}x`}
+            hint="payout premium"
           />
         </div>
 

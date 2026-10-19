@@ -36,6 +36,7 @@ import {
 import { cn } from "@/lib/cn";
 import {
   LOW_BALANCE_THRESHOLD,
+  fleetHourRate,
   planById,
   planEfficiency,
   planHourCost,
@@ -388,6 +389,7 @@ export default function BuyPage() {
       <BalanceStrip
         cash={cash}
         computeHours={computeHours}
+        hourRate={fleetHourRate(fleet)}
         holdings={holdings}
         modelsOwned={ownedModels.length}
         rigsOwned={ownedPlans.length}

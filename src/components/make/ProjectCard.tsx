@@ -146,9 +146,7 @@ function ProjectCardBase({
               icon="TrendingUp"
               label="payout"
               value={money2(projection.payout)}
-              hint={`×${multiplier(
-                projection.payout / Math.max(0.01, projection.basePayout),
-              )} after bonuses`}
+              hint={`×${multiplier(projection.qualityPremium)} quality`}
               tone="text-mint-400"
             />
             <Stat
@@ -188,7 +186,11 @@ function ProjectCardBase({
             </span>
             {shipped > 0 ? (
               <span className="text-[11px] text-fog-500">
-                shipped <span className="num text-mint-400">{shipped}</span>×
+                shipped <span className="num text-mint-400">{shipped}</span>× ·{" "}
+                <span className="num text-ember-400">
+                  {pct(projection.marketHeat)}
+                </span>{" "}
+                heat
               </span>
             ) : null}
           </div>

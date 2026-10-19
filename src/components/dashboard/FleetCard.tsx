@@ -11,7 +11,6 @@ import {
   speedMultiplier,
 } from "@/data/compute";
 import {
-  PAYOUT_MULT_BY_TIER,
   bestPlanFor,
   hoursInUse,
   planById,
@@ -36,7 +35,12 @@ export function FleetCard(): ReactElement {
   const plan = planById(fleet.planId);
   const accent = plan?.accent ?? "#7c5cff";
   const speed = speedMultiplier(fleet);
-  const payout = PAYOUT_MULT_BY_TIER[fleet.tier] ?? 1;
+  // The client pays a flat fee, so the only thing your rig changes about a job's
+  // economics is what an hour of it costs you. Compare against the cheapest rig
+  // that could have done the work instead.
+  const refPlan = bestPlanFor(fleet.tier);
+  const myRate = plan ? plan.pricePerHour : refPlan.pricePerHour;
+  const rateRatio = myRate > 0 ? refPlan.pricePerHour / myRate : 1;
 
   const inUse = now === null ? 0 : hoursInUse(runs, now);
   const ringPct = ratio(inUse, computeHours + inUse) * 100;
@@ -97,11 +101,11 @@ export function FleetCard(): ReactElement {
             hint={`jobs run ${speed.toFixed(2)}× faster than stock`}
           />
           <Metric
-            icon="TrendingUp"
-            label="Payout bonus"
-            value={multiplier(payout)}
-            hint="applied to every invoice"
-            tone="text-mint-400"
+            icon="Coins"
+            label="Rate vs best"
+            value={pct(rateRatio)}
+            hint={`best tier-${fleet.tier} rig bills ${money2(refPlan.pricePerHour)}/h`}
+            tone={rateRatio >= 0.999 ? "text-mint-400" : "text-ember-400"}
           />
           <Metric
             icon="Receipt"

@@ -25,19 +25,22 @@ import { hours, money, money2, tokens } from "@/lib/format";
 export function BalanceStrip({
   cash,
   computeHours,
+  hourRate,
   holdings,
   modelsOwned,
   rigsOwned,
 }: {
   cash: number;
   computeHours: number;
+  /** What an hour costs on the current flagship — the pool's replacement rate. */
+  hourRate: number;
   holdings: Record<string, { tokens: number }>;
   modelsOwned: number;
   rigsOwned: number;
 }): ReactElement {
   const pool = totalTokens(holdings);
   const pools = poolCount(holdings);
-  const hoursValue = computeValueOf(computeHours);
+  const hoursValue = computeValueOf(computeHours, hourRate);
   const tokenValue = holdingsValue(holdings);
   const worth = round2(cash + hoursValue + tokenValue);
   const low = cash < LOW_BALANCE_THRESHOLD;

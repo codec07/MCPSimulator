@@ -361,7 +361,7 @@ export const MODELS: ModelDef[] = [
     tagline: "Multilingual speech recognition with timestamps",
     description:
       "OpenAI's open ASR model transcribes and translates speech across 99 languages, returning word-level timing.",
-    capabilities: ["audio", "text"],
+    capabilities: ["audio"],
     contextWindow: 4_096,
     quality: 82,
     speed: 80,

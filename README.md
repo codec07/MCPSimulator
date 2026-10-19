@@ -15,14 +15,20 @@
 A no-signup, offline, single-player simulator for the economics of building
 software with frontier models and rented GPUs.
 
-You start with **$20 of play money** and **10 free compute hours** — deliberately
-thin, so the opening move is a real choice between a token pack and the hours to
-run it, and a $4 gig genuinely matters. You buy tokens for specific models and
-hours on specific rigs, then take contracts that consume both and pay out. The
-interesting part is the trade: cheap iron maximises profit per run, big iron
-maximises profit per minute — and your choice of model changes both the token bill
-and the payout. Once you have stock on hand, any contract can be **batched**: run
-it several times over and the whole set reports as a single job.
+You start with **$20 of play money** and **10 free compute hours**, then buy
+tokens for specific models and hours on specific rigs, and take contracts that
+consume both.
+
+Every contract is a **fixed fee**: the client pays for the deliverable, not for
+what it cost you to produce. Cheap iron therefore keeps more of each cheque,
+while big iron finishes the job in a fraction of the time. The market is finite,
+too — the first time you ship a given contract it pays a healthy markup over its
+real cost, and every copy after that cools the market toward a thin spot rate.
+That is what keeps the money from running away: your income per run is a dollar
+amount tied to the work, never a percentage of your bankroll.
+
+Once you have stock on hand, any contract can be **batched**: run it several
+times over and the whole set reports as a single job.
 
 **Everything in it is fake.** There is no backend, no account, no payment and no
 API call of any kind. The whole simulation runs in your browser and persists to
@@ -78,11 +84,12 @@ looks wrong, the culprit is almost always stale `localStorage` — see
    currently empty, because you haven't done anything yet.
 2. **Buy tokens.** Go to **Buy → Models**. Pick something cheap to start
    (a budget model is fine). Each model sells four packs — *Starter, Builder,
-   Studio, Foundry* — with rising bonus percentages. Buy the Starter pack.
+   Studio, Foundry* — with a rising bonus of free tokens. Buy the Starter pack.
 3. **Buy compute.** Switch to **Buy → Compute**. Pick a rig and choose an hour
    bundle (1 / 5 / 25 / 100 and similar, with a volume discount at 5+, 25+, 100+
    and 250+ hours). **The rig you buy becomes your flagship** — it sets the speed
-   and the payout bonus for every future build.
+   of every future build and the rate at which buying hours re-prices the whole
+   pool. Match the rig to the work: a tier-5 rig on a tier-1 contract loses money.
 4. **Take a contract.** Go to **Make**. Every card is priced *against your rig*,
    not against a generic baseline. Open one and read the detail modal: the
    deliverables, which of your token pools satisfy the required capability, a
@@ -139,8 +146,7 @@ maxBatch = min(byHours, byTokens, 50)          // 50 is a hard ceiling
 So a batch is bounded by whichever resource runs out first. The card shows the
 result as a `batch ×10` chip; the modal spells out which ceiling applied.
 
-**Nothing about the economy changes.** A batch is N *independent* runs launched at
-once:
+**A batch is N *independent* runs launched at once:**
 
 - Each run burns its own `tokenCost`, reserves its own `billedHours`, and rolls
   its **own** failure chance. A batch of 10 with a 2% failure rate will usually
@@ -149,6 +155,11 @@ once:
   5 costs exactly what 5 separate launches would have — no discount, no rounding
   drift, no averaging.
 - They share one timer, so all N finish together.
+- They are priced against the **same cooling market**: run *k* of a batch sees a
+  market that has already absorbed the previous *k−1* deliveries. A batch of 10
+  Podcast Show Notes pays $0.25 for the first copy and $0.20 for the tenth —
+  batching cannot dodge the decay, it only parallels it. The premium cools; the
+  floor does not.
 
 What *does* change is the presentation:
 
@@ -156,9 +167,9 @@ What *does* change is the presentation:
   `Running batch: <contract> ×N` card with combined hours, tokens and payout, plus
   one **Abort batch** button that releases every run's unconsumed hours at once.
 - **One ledger line, not N.** Settlement writes a single entry —
-  `Shipped batch: Podcast Show Notes ×10 · $73.00`. If some runs failed it reads
-  `Batch settled: … 8/10 delivered · 2 failed · 6.4h compute`; a total loss reads
-  `Batch failed: …`.
+  `Shipped batch: Podcast Show Notes ×10`, with `+$2.20` in the amount column. If
+  some runs failed it reads `Batch settled: … 8/10 delivered · 2 failed · 6.4h
+  compute`; a total loss reads `Batch failed: …`.
 - **Runs still count as runs.** `runsStarted`, `runsCompleted` and `runsFailed`
   increment per run, because that is what they measure. Only the navbar's *live*
   pill counts **jobs** — so a batch of 10 shows as `1 live`.
@@ -167,26 +178,29 @@ What *does* change is the presentation:
 
 ## The economy, precisely
 
-This is the part worth reading. One rule keeps every number in the app coherent.
+This is the part worth reading. One rule keeps every number in the app coherent:
+**the client pays a fixed fee for the deliverable, not for what it cost you.**
 
 A contract has a fixed **workload** — `computeHours` of compute *load* and
-`tokenCost` tokens. It does **not** have a fixed wall-clock time. Your rig
-decides how fast that load burns down, and how many of *your* purchased hours it
-eats:
+`tokenCost` tokens. It does **not** have a fixed wall-clock time, and it does
+**not** have a variable price. Your rig decides how fast that load burns down and
+how many of *your* purchased hours it eats; the fee is the same either way:
 
 ```
-speed       = speedMultiplier(fleet)          // from TFLOPS and vCPUs
-billedHours = computeHours / speed            // hours reserved from your pool
-wallClock   = baseSeconds  / speed            // seconds of progress bar
-payout      = payment × fleetBonus × qualityBonus
+speed       = speedMultiplier(fleet)      // from TFLOPS and vCPUs, 0.2x - 5.0x
+billedHours = computeHours / speed        // hours reserved from your pool
+wallClock   = baseSeconds  / speed        // seconds of progress bar
+payout      = floor + premium × marketHeat(shipped) × qualityPremium(pool)
 ```
 
-So a bigger rig is *not* a strict upgrade — it is a trade:
+Profit is `payout − (billedHours × yourRate + tokens × yourTokenPrice)`, so a
+bigger rig is *not* a strict upgrade — it is a trade:
 
-- **Cheap iron** finishes slowly, but burns the fewest dollars per workload-hour.
-  Best margin per run.
-- **Big iron** costs more per hour, yet reserves far fewer of your hours and
-  finishes in a fraction of the time. Best money per minute.
+- **Cheap iron** finishes slowly, but burns the fewest dollars per workload-hour,
+  so it keeps the most of each fee. Best money per *run*.
+- **Big iron** costs far more per hour, yet reserves a fraction of your hours and
+  finishes in a fraction of the time. Best money per *minute* — but only on
+  contracts whose fee is large enough to cover the rate.
 
 ### The speed curve
 
@@ -209,34 +223,100 @@ one class of hardware from the next:
 | 4 | Datacenter GPU | 3 | 2.61–3.19× | 2.49–3.40 | 0.96–1.29 |
 | 5 | Hyperscale cluster | 2 | 5.00× | 9.40–11.00 | 1.88–2.20 |
 
-Two further multipliers sharpen the choice:
+Two numbers decide whether a rate is worth paying:
 
-- **Fleet bonus** — `1.00 / 1.10 / 1.22 / 1.38 / 1.55` by tier. Serious hardware
-  commands a better invoice.
-- **Quality bonus** — `0.85 … 1.25`, scaled by the mean quality index of the
-  token pools a run actually drains. Solving a job with a stronger model pays
-  better, but costs far more per token.
+- **Rate per workload-hour** — `$/h ÷ speed`, what an hour of *actual work*
+  costs you. It spans **0.04 → 2.20** across the catalog, a ~50× spread.
+- **Speed** — it spans only **0.35× → 5.0×**, a ~14× spread. Speed is worth
+  paying for, but not at any price: a rate 470× higher only buys ~11× the
+  throughput.
+
+The catalog is deliberately unbalanced in favour of cheap iron per *run* and
+expensive iron per *minute*, and there is no dominant rig: OCI's free ARM box is
+the cheapest per workload-hour, the tier-5 H100 the fastest, and both are the
+right answer to a different question.
 
 ### How the catalog is calibrated
 
-Every contract's price is generated, not guessed. A project's *fair value* is
-its compute load at a $0.60/workload-hour floor, plus its token bill at a
-per-capability reference price; the stored payout is that fair value times a
-difficulty markup:
+Every contract's fee is generated, not guessed. The basis is the **achievable
+minimum cost** of doing the job — the cheapest rig that can legally run it, with
+the cheapest eligible token pool:
 
 ```
-fairValue = computeHours × 0.60 + (tokenCost / 1e6) × REFERENCE_TOKEN_PRICE[capability]
-payment   = round(fairValue × DIFFICULTY_MARGIN[difficulty])
+refCost(p) = (p.computeHours / speed(bestRig(p.minFleetTier))) × rate(bestRig)
+           + (p.tokenCost / 1e6) × cheapestBlended[capability]
 
-DIFFICULTY_MARGIN = {1: 1.20, 2: 1.32, 3: 1.45, 4: 1.60, 5: 1.78}
+fee = roundPrice(refCost(p) × MARKUP_BY_DIFFICULTY[p.difficulty])
+MARKUP_BY_DIFFICULTY = {1: 1.30, 2: 1.45, 3: 1.65, 4: 1.90, 5: 2.20}
 ```
 
-That guarantee survives contact with the simulation. Priced against **the
-cheapest rig that can legally run it**, at the **worst payout multipliers** its
-tier allows (fleet bonus ×1.00–1.55 floor and the quality-bonus floor of ×0.85),
-and the **conservative reference token prices**, all 34 contracts still turn a
-profit. The tightest is *Recommender System* at **+24%**; the roomiest is
-*Podcast Show Notes* at **+68%**. Nothing in the catalog is dead content.
+Because the basis is the *cheapest legal* setup, careful shopping is rewarded on
+every contract, and the markup climbs with the difficulty of the work:
+
+| Difficulty | Contracts | Fresh market | Fully saturated |
+| --- | --- | --- | --- |
+| 1 | 8 | +30% | +1.0% |
+| 2 | 9 | +45% | +1.0% |
+| 3 | 8 | +65% | +1.0% |
+| 4 | 6 | +90% | +1.0% |
+| 5 | 3 | +119% | +1.0% |
+
+### The market cools
+
+The engine keeps a **shipped counter** per contract. The first time you deliver
+one you are paid the full premium; every copy after that pays `MARKET_DECAY =
+0.78` of whatever premium was left:
+
+```
+heat   = 0.78 ^ shippedBefore
+payout = floor + (fee − floor) × heat × qualityPremium(avgQuality)
+floor  = refCost × 1.01                      // a ~1% spot margin, never less
+```
+
+Two consequences, both deliberate:
+
+- **Copy-and-paste stops paying.** Ship the same easy contract ten times and
+  ~8% of its premium remains; the eleventh copy is worth almost exactly its
+  reference cost. Grinding one button buys *linear* income, not exponential.
+- **A bigger fee is not a multiplier on your bankroll.** Premium is a fixed
+  dollar amount tied to the work; only the floor scales with cost. Income grows
+  with *runs per minute*, so wealth compounds only while it is small relative to
+  a batch's spend — after that the game is throughput, not yield.
+
+There is roughly **$2.5k of premium in existence** in the whole catalog (all 34
+contracts, summed at reasonable pool quality; under $3k even at perfect quality).
+That is the game's entire bounded windfall; once it has been sold, the world is a
+spot market.
+
+Quality moves only the premium, never the floor, so a weak token pool can slow
+you down but can never sink a run all by itself:
+
+```
+qualityPremium(q) = clamp(1 + (q − 76.5) × 0.0085, 0.35, 1.20)
+```
+
+### Pacing
+
+What that adds up to, running each tier on the cheapest rig that can legally run
+it, buying the cheapest eligible tokens, and starting from an untouched market:
+
+| Tier | Contracts | Net per run (avg) | Wall clock (avg) | Net per minute |
+| --- | --- | --- | --- | --- |
+| 1 | 12 | $0.60 | 0.7 min | **$0.59** |
+| 2 | 11 | $4.41 | 0.5 min | **$8.95** |
+| 3 | 4 | $32.71 | 0.6 min | **$49.61** |
+| 4 | 5 | $121.26 | 0.7 min | **$158.32** |
+| 5 | 2 | $749.00 | 0.6 min | **$1,281.87** |
+
+Read it as a *capital* ladder, not a skill ladder. The fee is proportional to the
+cost basis, and cost is dominated by the rig rate — which spans ~470×, while the
+reference speed spans only ~11× — so income per minute climbs steeply with the
+tier you can afford to provision. What does *not* climb is the [premium
+inventory](#the-market-cools): $2.5k of margin exists in the world, and every run
+spends some of it. After that the game is a 1%-per-cycle spot market, which is
+linear by construction. If the ladder feels too steep, the two dials are
+`MARKUP_BY_DIFFICULTY` (how much margin exists) and `MARKET_DECAY` (how fast it
+burns off).
 
 ### Where your tokens go
 
@@ -273,7 +353,7 @@ from an actual run in the app:
 
 | | |
 | --- | --- |
-| Listed payout | **$4** |
+| Listed fee | **$0.25** |
 | Workload | 4 compute-hours, 3,000,000 audio tokens |
 | Rig | OCI Ampere A1 Flex — 0.9 TFLOPS, 4 vCPU, $0.02/h |
 | Speed | 0.454× |
@@ -281,20 +361,25 @@ from an actual run in the app:
 | Wall clock | 14 / 0.454 ≈ **31 s** |
 | Compute cost | 8.81 × $0.02 = **$0.18** |
 | Token cost | 3M × $0.006/M (Whisper Large v3) = **$0.02** |
-| Fleet bonus | ×1.00 (tier 1) |
-| Quality bonus | ×1.18 (Whisper's quality index is 82) |
-| **Payout** | $4 × 1.00 × 1.18 = **$4.71** |
-| **Net** | **+$4.51** |
+| Market heat | ×1.00 — you have never shipped this contract |
+| Quality | ×1.05 (Whisper's quality index is 82) |
+| **Payout** | $0.196 + ($0.25 − $0.196) × 1.00 × 1.05 = **$0.25** |
+| **Net** | **+$0.05** |
 
-Notice the hourly rate is almost irrelevant here — the run costs 18 cents
-because it reserves 8.81 hours of a two-cent rig. The same contract on a
-datacenter H100 reserves just 1.54 hours at $2.49/h, finishes in about **5
-seconds instead of 31**, and pays **1.38× more** — for roughly **20× the compute
-cost**. That is the whole game.
+The fee is fixed at $0.25. The **floor** — $0.196, the reference cost ($0.194)
+with a 1% spot margin — is what the market still pays for this contract once it
+is fully saturated. Everything above the floor is premium, and premium cools:
+this is the most this job will ever pay, and it is worth less every time you ship
+it. A second copy launched right behind it pays $0.24.
 
-The $4 payout itself is the calibration formula in action:
-`(4 × 0.60) + (3 × 0.30) = $3.30`, times the difficulty-1 markup of 1.20 =
-`$3.96`, stored pre-rounded as `$4`.
+Run the same job on a hyperscale H100 and it finishes in **3 seconds instead of
+31** — but the client still pays $0.25, while your compute bill jumps from $0.18
+to $7.52. **You lose $7.29.** Your rig no longer changes the cheque, only what it
+costs you to cash it, so matching the rig to the work *is* the game.
+
+The $0.25 fee is the calibration formula in action:
+`refCost = (4 / 0.454) × $0.02 + 3 × $0.006 = $0.194`, times the difficulty-1
+markup of 1.30, rounded to a clean `$0.25`.
 
 ---
 
@@ -343,9 +428,10 @@ H100 cluster, with TFLOPS, vCPUs, VRAM, regions, a billing model (hourly,
 per-second, spot, monthly) and a reliability record. Each sells four hour
 bundles.
 
-**Contracts** run from a $4 podcast-notes job to a $2,000 autonomous support
+**Contracts** run from a $0.25 podcast-notes job to a $1,500 autonomous support
 agent, with workloads from 3 to 200 compute-hours and token bills from 2.8M to
-900M.
+900M. Fees are calibrated against the *cheapest legal* way to do the job: the
+reference cost of that podcast job is 19 cents, and of the support agent $682.
 
 ---
 
@@ -385,9 +471,10 @@ modal, and at launch — there is no second implementation to drift.
 ### State and persistence
 
 One `zustand` store, persisted under the `localStorage` key `mcpsim-state`
-(currently schema version `4`). It holds cash, the compute-hour pool, token
+(currently schema version `5`). It holds cash, the compute-hour pool, token
 holdings, your flagship `fleet`, running and settled `runs`, a transaction
-`history`, lifetime `stats`, and the set of contracts you've shipped.
+`history`, lifetime `stats`, and the set of contracts you've shipped — the last
+of which doubles as the market's **shipped counter** for every contract.
 
 Two deliberate details:
 
@@ -541,10 +628,12 @@ an update, reset first — a schema change with stale storage is the most likely
 cause.
 
 Saved state carries a schema version (`STATE_VERSION` in `src/lib/economy.ts`).
-When it is bumped — as it was for **v1.1**, which reset the opening float to $20
-and added batch runs — the next load discards the old blob and drops you at a
+When it is bumped — as it was for **v1.1**, which reset the opening float to $20,
+added batch runs, and replaced the old payout multipliers with the fixed-fee,
+cooling-market economy — the next load discards the old blob and drops you at a
 fresh start, welcome overlay and all. That is deliberate: saves are not
-balance-patched across a rebalance.
+balance-patched across a rebalance. (`STATE_VERSION` is `5`; anything older is
+thrown away.)
 
 ---
 
@@ -557,14 +646,22 @@ prices and specs are realistic but static.
 happens at launch and is revealed at completion; failures pay a 30% partial
 delivery.
 
-**Why does a stronger model pay *and* cost more?** Quality drives both the token
-price and the payout bonus (×0.85–×1.25). On an easy job the extra quality
-rarely pays for itself; on hard ones it does.
+**Why does a stronger model cost more for the same fee?** Quality buys labour, not
+revenue: the client pays a fixed fee either way, so a better model can only
+recover *part* of its price by lifting the premium (×0.35–×1.20 of what remains
+unsold). On a fresh contract that can pay off; on a saturated one all you have
+left is the bill.
 
-**Why is a cheaper rig sometimes more profitable?** Because a run costs
-`workloadHours / speed × hourlyRate`. A slow, cheap rig bills more hours at a
-much lower rate, and the tier payout bonus (up to ×1.55) only partly closes the
-gap. See the worked example.
+**Why is a cheaper rig sometimes more profitable?** Because the client pays a
+flat fee and your cost is `workloadHours / speed × hourlyRate`. A slow, cheap rig
+bills more hours at a much lower rate — and there is no tier bonus to bail out an
+expensive one. A tier-5 rig running a tier-1 contract loses money. See the worked
+example.
+
+**Why does shipping the same contract twice pay less?** The market absorbs what
+you deliver: `heat = 0.78^shipped`. The first copy earns the full markup; later
+copies converge on the reference cost plus a 1% spot margin. Grinding one
+contract is a way to buy linear income, not exponential wealth.
 
 **I saw a hydration warning in the dev console mentioning an unknown attribute.**
 A browser extension is editing the page before React loads. `<body>` carries
@@ -592,9 +689,16 @@ static export. Nothing phones home.
   hyperscale rigs hit the ceiling, so they differ only in price. The cheaper one
   is the better buy; this is a known catalog quirk rather than a balance
   decision.
-- **A few payouts are rounded to round numbers.** `payment` is stored
-  pre-rounded, so five of the 34 contracts sit up to ~11% below their formula
-  value. None of them fall below profitable.
+- **Fees are stored literals, not computed on the fly.** Each `payment` is
+  `roundPrice(refCost × markup)`, generated from the catalogs and pasted in, so a
+  fee can look arbitrary (Podcast Show Notes is $0.25, not $0.252). Change a
+  model or rig price and the stored fees drift out of calibration — regenerating
+  them is a deliberate two-step, not a build step.
+- **A cheap model can be the *right* model.** The reference token price is the
+  cheapest eligible one, so the cheapest pool is usually also the correct pool.
+  The exception is worth knowing: *Whisper Large v3* used to advertise `text` as
+  well as `audio`, which made a speech model the cheapest text engine in the game
+  and quietly inflated two contracts' token bills ~5×. It is `audio` only.
 - **Single player, single browser.** State is one `localStorage` blob. No sync,
   no export, no undo beyond the reset button.
 - **Batches are scheduled as truly parallel.** Every run in a batch shares one

@@ -8,6 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Sparkline } from "@/components/ui/charts";
 import {
   LOW_BALANCE_THRESHOLD,
+  fleetHourRate,
   hoursInUse,
   netWorth,
   poolCount,
@@ -50,12 +51,14 @@ export function KpiTiles(): ReactElement {
   const holdings = useSim((s) => s.holdings);
   const runs = useSim((s) => s.runs);
   const history = useSim((s) => s.history);
+  const fleet = useSim((s) => s.fleet);
   const worth = useSim((s) => netWorth(s));
 
   const inUse = now === null ? 0 : hoursInUse(runs, now);
   const pool = totalTokens(holdings);
   const pools = poolCount(holdings);
   const rate = blendedTokensPerDollar(holdings);
+  const hourRate = fleetHourRate(fleet);
   const live = runs.filter((r) => r.status === "running").length;
   const low = cash < LOW_BALANCE_THRESHOLD;
 
@@ -129,7 +132,13 @@ export function KpiTiles(): ReactElement {
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       {kpis.map((kpi, index) => (
         <div key={kpi.key} className="animate-rise" style={riseDelay(index)}>
-          <KpiTile kpi={kpi} history={history} runs={runs} rate={rate} />
+          <KpiTile
+            kpi={kpi}
+            history={history}
+            runs={runs}
+            rate={rate}
+            hourRate={hourRate}
+          />
         </div>
       ))}
     </div>
@@ -141,13 +150,15 @@ function KpiTile({
   history,
   runs,
   rate,
+  hourRate,
 }: {
   kpi: Kpi;
   history: Tx[];
   runs: BuildRun[];
   rate: number;
+  hourRate: number;
 }): ReactElement {
-  const series = historySeries(history, kpi.metric, kpi.anchor, rate, runs);
+  const series = historySeries(history, kpi.metric, kpi.anchor, rate, hourRate, runs);
 
   return (
     <Card

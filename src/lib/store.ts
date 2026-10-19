@@ -22,9 +22,12 @@ import {
   STOCK_FLEET,
   STATE_VERSION,
   clamp,
+  fleetHourRate,
+  marketHeat,
   maxBatchFor,
   planHourCost,
   projectionOf,
+  refundHoursOf,
   round2,
 } from "./economy";
 import type {
@@ -394,35 +397,53 @@ export const useSim = create<SimStore>()(
         const cash = round2(state.cash - cost);
         const currentSpeed = speedMultiplier(state.fleet);
         const candidateSpeed = speedMultiplier(plan);
-        const upgrade = candidateSpeed > currentSpeed;
+        const faster = candidateSpeed > currentSpeed;
+        const switched = state.fleet.planId !== plan.id;
 
-        const fleet = upgrade
-          ? {
-              planId: plan.id,
-              name: plan.name,
-              tier: plan.tier as FleetTier,
-              tflops: plan.tflops,
-              vcpus: plan.vcpus,
-              vram: plan.vram,
-              gpu: plan.gpu,
-            }
-          : state.fleet;
+        // A run is always billed at the rig it ran on, so the pool can never be
+        // a mix of price points: switching flagships re-provisions the hours you
+        // already hold at the new rig's rate, value for value. Without this you
+        // could stockpile $0.02 OCI hours and then burn them at H100 speed, which
+        // was worth ~470x the money you actually spent.
+        const prevRate = fleetHourRate(state.fleet);
+        const carriedHours =
+          switched && prevRate > 0
+            ? Math.round((state.computeHours * (prevRate / plan.pricePerHour)) * 100) / 100
+            : state.computeHours;
+
+        const fleet = {
+          planId: plan.id,
+          name: plan.name,
+          tier: plan.tier as FleetTier,
+          tflops: plan.tflops,
+          vcpus: plan.vcpus,
+          vram: plan.vram,
+          gpu: plan.gpu,
+        };
+
+        const reProvisioned = round2(carriedHours - state.computeHours);
 
         const history = pushHistory(
           state.history,
           tx(
             "purchase-compute",
             -cost,
-            `${hours}h on ${plan.name}`,
-            upgrade
-              ? `New flagship rig — ${candidateSpeed.toFixed(2)}x throughput (was ${currentSpeed.toFixed(2)}x)`
+            switched
+              ? `${hours}h on ${plan.name}`
+              : `${hours}h more on ${plan.name}`,
+            switched
+              ? `${faster ? "New flagship rig" : "Slower flagship rig"} — ${candidateSpeed.toFixed(2)}x throughput (was ${currentSpeed.toFixed(2)}x)${
+                  reProvisioned !== 0
+                    ? ` · ${reProvisioned > 0 ? "+" : ""}${reProvisioned.toFixed(1)}h re-provisioned from your pool`
+                    : ""
+                }`
               : `${plan.provider} · ${speedMultiplier(plan).toFixed(2)}x throughput`,
           ),
         );
 
         set({
           cash,
-          computeHours: round2(state.computeHours + hours),
+          computeHours: round2(carriedHours + hours),
           fleet,
           ownedPlans: state.ownedPlans.includes(planId)
             ? state.ownedPlans
@@ -471,7 +492,8 @@ export const useSim = create<SimStore>()(
           return { ok: false, reason: "fleet" };
         }
 
-        const p = projectionOf(def, state.fleet, state.holdings);
+        const shipped0 = state.completed[def.id] ?? 0;
+        const p = projectionOf(def, state.fleet, state.holdings, shipped0);
 
         if (!p.tokensOk) {
           set({
@@ -538,7 +560,11 @@ export const useSim = create<SimStore>()(
         let expectedPayout = 0;
 
         for (let index = 0; index < batchSize; index += 1) {
-          const slice = index === 0 ? p : projectionOf(def, state.fleet, pool);
+          // The market cools with every copy you ship, so run N of a batch is
+          // priced against the demand runs 0..N-1 already consumed.
+          const shipped = shipped0 + index;
+          const slice =
+            index === 0 ? p : projectionOf(def, state.fleet, pool, shipped);
           if (!slice.tokensOk) break;
 
           for (const s of slice.sources) {
@@ -566,9 +592,11 @@ export const useSim = create<SimStore>()(
               tokens: s.tokens,
             })),
             speedMultiplier: slice.speed,
-            payoutMultiplier: round2(slice.fleetBonus * slice.qualityBonus),
+            payoutMultiplier: round2(slice.qualityPremium),
+            marketHeat: marketHeat(shipped),
             payout: slice.payout,
             fleetTierAtLaunch: state.fleet.tier,
+            hourRateAtLaunch: fleetHourRate(state.fleet),
             label: def.title,
             willFail: Math.random() < risk,
           });
@@ -640,9 +668,14 @@ export const useSim = create<SimStore>()(
           1,
         );
         const refund = Math.max(0, run.billedHours - consumed);
+        const released = refundHoursOf(
+          refund,
+          run.hourRateAtLaunch,
+          fleetHourRate(state.fleet),
+        );
 
         set({
-          computeHours: round2(state.computeHours + refund),
+          computeHours: round2(state.computeHours + released),
           runs: state.runs.map((r) =>
             r.id === runId
               ? { ...r, status: "cancelled" as const, hoursConsumed: consumed }
@@ -654,7 +687,7 @@ export const useSim = create<SimStore>()(
               "build",
               0,
               `Aborted: ${run.label}`,
-              `${refund.toFixed(1)}h of compute released back to the pool`,
+              `${released.toFixed(1)}h of compute released back to the pool`,
             ),
           ),
         });
@@ -673,7 +706,10 @@ export const useSim = create<SimStore>()(
         );
         if (!targets.length) return { ok: false, reason: "unknown-project" };
 
-        let refund = 0;
+        // Every run in a batch shares one launch, so one rate covers them all.
+        // Accumulate in dollars and convert once, at today's rate.
+        const launchRate = targets[0].hourRateAtLaunch || 1;
+        let refundedHours = 0;
         const consumedById = new Map<string, number>();
 
         for (const run of targets) {
@@ -685,14 +721,19 @@ export const useSim = create<SimStore>()(
               1,
             );
           consumedById.set(run.id, consumed);
-          refund += Math.max(0, run.billedHours - consumed);
+          refundedHours += Math.max(0, run.billedHours - consumed) * (run.hourRateAtLaunch || launchRate);
         }
 
         const head = targets[0];
         const count = targets.length;
+        const released = refundHoursOf(
+          refundedHours / launchRate,
+          launchRate,
+          fleetHourRate(state.fleet),
+        );
 
         set({
-          computeHours: round2(state.computeHours + refund),
+          computeHours: round2(state.computeHours + released),
           runs: state.runs.map((r) =>
             consumedById.has(r.id)
               ? {
@@ -710,7 +751,7 @@ export const useSim = create<SimStore>()(
               count > 1
                 ? `Aborted batch: ${head.label} ×${count}`
                 : `Aborted: ${head.label}`,
-              `${refund.toFixed(1)}h of compute released back to the pool`,
+              `${released.toFixed(1)}h of compute released back to the pool`,
             ),
           ),
         });

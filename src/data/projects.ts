@@ -2,48 +2,32 @@
  * MCP Simulator — project ("Make") catalog.
  *
  * 34 freelance/agency deliverables spread across all 10 categories and all
- * 11 model capabilities. Payouts are NOT invented: every `payment` is the
- * calibrated fair value of the run plus a difficulty margin, rounded to a
- * clean number (see `fairValue` / `margin` below).
+ * 11 model capabilities.
  *
- * Economy contract:
- *   REFERENCE_COMPUTE_PRICE = 0.60 USD per workload-hour
- *   REFERENCE_TOKEN_PRICE   = USD per 1M tokens, by capability
- *   fairValue(p) = p.computeHours * REFERENCE_COMPUTE_PRICE
- *                + p.tokenCost / 1e6 * REFERENCE_TOKEN_PRICE[p.capability]
- *   payment      = round(fairValue(p) * DIFFICULTY_MARGIN[p.difficulty])
+ * Payouts are NOT invented. Every `payment` is the *reference cost* of the run
+ * — the cheapest rig that legally meets `minFleetTier` (at `@/data/compute`'s
+ * `bestPlanFor`) plus the cheapest eligible token pool — marked up by
+ * `MARKUP_BY_DIFFICULTY`, then rounded to a clean number:
  *
- * `payment` is stored pre-rounded so the UI never formats a long decimal.
+ *   refCost(p) = p.computeHours / speed(bestPlanFor(p.minFleetTier))
+ *                * bestPlanFor(p.minFleetTier).pricePerHour
+ *              + p.tokenCost / 1e6 * cheapestTokenPrice(p.capability)
+ *   payment    = roundPrice(refCost(p) * MARKUP_BY_DIFFICULTY[p.difficulty])
+ *
+ * So a client's cheque always covers a *real*, achievable cost basis, which is
+ * what stops payouts from outrunning expenses. `payment` is the fee on a fresh
+ * contract; the live fee decays toward `SPOT_MARKUP * refCost` as you flood the
+ * market — see `@/lib/economy`'s `referenceCostOf` / `payoutOf`.
+ *
+ * The literals above are *generated and pasted in*, not computed at build time.
+ * Change a model or rig price and every fee drifts out of calibration, so
+ * re-derive them with the formula above whenever `@/data/models` or
+ * `@/data/compute` changes. Capability lists count: `referenceTokenPrice` picks
+ * the cheapest *eligible* pool, so giving a cheap model an extra capability
+ * silently re-prices every contract that uses it.
  */
 
-import type { Capability, FleetTier, ProjectCategory, ProjectDef } from "@/lib/types";
-
-/** USD per workload-hour used as the floor for every run's fair value. */
-const REFERENCE_COMPUTE_PRICE = 0.6;
-
-/** USD per 1M tokens used to price a run's token draw, by capability. */
-export const REFERENCE_TOKEN_PRICE: Record<Capability, number> = {
-  text: 0.45,
-  reasoning: 1.6,
-  coding: 0.5,
-  vision: 0.8,
-  image: 0.35,
-  video: 1.2,
-  audio: 0.3,
-  embedding: 0.12,
-  math: 0.9,
-  "long-context": 0.7,
-  agentic: 1.1,
-};
-
-/** Markup applied over the fair value, by difficulty. */
-export const DIFFICULTY_MARGIN: Record<ProjectDef["difficulty"], number> = {
-  1: 1.2,
-  2: 1.32,
-  3: 1.45,
-  4: 1.6,
-  5: 1.78,
-};
+import type { FleetTier, ProjectCategory, ProjectDef } from "@/lib/types";
 
 /* ============================================================
    Difficulty 1 — quick wins (3–8h, 1.5M–6M tokens, fleet 1)
@@ -65,7 +49,7 @@ export const PROJECTS: ProjectDef[] = [
       "Wire scroll-reveal animations",
       "Ship a static build with 100/100 Lighthouse",
     ],
-    payment: 6,
+    payment: 0.76,
     computeHours: 5,
     tokenCost: 3_200_000,
     capability: "coding",
@@ -90,7 +74,7 @@ export const PROJECTS: ProjectDef[] = [
       "Persist data offline with SQLite",
       "Ship onboarding and empty states",
     ],
-    payment: 7,
+    payment: 0.94,
     computeHours: 6,
     tokenCost: 4_000_000,
     capability: "coding",
@@ -115,7 +99,7 @@ export const PROJECTS: ProjectDef[] = [
       "Build UI frames, icons and pickups",
       "Export atlases with a usage guide",
     ],
-    payment: 4,
+    payment: 0.29,
     computeHours: 4,
     tokenCost: 2_800_000,
     capability: "image",
@@ -140,7 +124,7 @@ export const PROJECTS: ProjectDef[] = [
       "Document clear-space and misuse rules",
       "Export SVG and PNG at every size",
     ],
-    payment: 5,
+    payment: 0.36,
     computeHours: 5,
     tokenCost: 3_500_000,
     capability: "image",
@@ -164,7 +148,7 @@ export const PROJECTS: ProjectDef[] = [
       "Add personalisation tokens",
       "Define the cadence and reply tracking",
     ],
-    payment: 5,
+    payment: 0.5,
     computeHours: 3,
     tokenCost: 5_500_000,
     capability: "text",
@@ -189,7 +173,7 @@ export const PROJECTS: ProjectDef[] = [
       "Add meta, schema and internal links",
       "Build an editorial calendar",
     ],
-    payment: 6,
+    payment: 0.59,
     computeHours: 4,
     tokenCost: 6_000_000,
     capability: "text",
@@ -213,7 +197,7 @@ export const PROJECTS: ProjectDef[] = [
       "Shard the suite for parallel CI",
       "Set coverage gates and reports",
     ],
-    payment: 7,
+    payment: 1.09,
     computeHours: 6,
     tokenCost: 5_000_000,
     capability: "coding",
@@ -237,7 +221,7 @@ export const PROJECTS: ProjectDef[] = [
       "Format show notes with links",
       "Prepare RSS-ready descriptions",
     ],
-    payment: 4,
+    payment: 0.25,
     computeHours: 4,
     tokenCost: 3_000_000,
     capability: "audio",
@@ -267,7 +251,7 @@ export const PROJECTS: ProjectDef[] = [
       "Design a keyboard-first result list",
       "Show highlighted snippets and filters",
     ],
-    payment: 20,
+    payment: 8.43,
     computeHours: 12,
     tokenCost: 14_000_000,
     capability: "long-context",
@@ -291,7 +275,7 @@ export const PROJECTS: ProjectDef[] = [
       "Add watch-face complications",
       "Design a glanceable in-workout screen",
     ],
-    payment: 16,
+    payment: 4.56,
     computeHours: 14,
     tokenCost: 8_000_000,
     capability: "coding",
@@ -315,7 +299,7 @@ export const PROJECTS: ProjectDef[] = [
       "Design the level map and win screens",
       "Optimise for 60fps touch play",
     ],
-    payment: 15,
+    payment: 2,
     computeHours: 13,
     tokenCost: 7_000_000,
     capability: "coding",
@@ -340,7 +324,7 @@ export const PROJECTS: ProjectDef[] = [
       "Tighten the metric and traction slides",
       "Export edit-ready and PDF versions",
     ],
-    payment: 11,
+    payment: 0.79,
     computeHours: 9,
     tokenCost: 9_000_000,
     capability: "image",
@@ -364,7 +348,7 @@ export const PROJECTS: ProjectDef[] = [
       "Design a three-tier package",
       "Write the recommendation memo",
     ],
-    payment: 20,
+    payment: 8.14,
     computeHours: 12,
     tokenCost: 10_000_000,
     capability: "math",
@@ -388,7 +372,7 @@ export const PROJECTS: ProjectDef[] = [
       "Flag low-confidence pages for review",
       "Export to a queryable database",
     ],
-    payment: 35,
+    payment: 15.09,
     computeHours: 18,
     tokenCost: 20_000_000,
     capability: "vision",
@@ -412,7 +396,7 @@ export const PROJECTS: ProjectDef[] = [
       "Publish module registry docs",
       "Cut a first stable release tag",
     ],
-    payment: 20,
+    payment: 6.15,
     computeHours: 18,
     tokenCost: 12_000_000,
     capability: "coding",
@@ -436,7 +420,7 @@ export const PROJECTS: ProjectDef[] = [
       "Profile the top ten competitors",
       "Write the report with cited evidence",
     ],
-    payment: 25,
+    payment: 9.78,
     computeHours: 16,
     tokenCost: 16_000_000,
     capability: "long-context",
@@ -460,7 +444,7 @@ export const PROJECTS: ProjectDef[] = [
       "Tune a domain-specific glossary",
       "Emit a versioned JSON contract",
     ],
-    payment: 17,
+    payment: 3.56,
     computeHours: 15,
     tokenCost: 12_000_000,
     capability: "audio",
@@ -489,7 +473,7 @@ export const PROJECTS: ProjectDef[] = [
       "Cache pages at the edge",
       "Tune the product page for conversion",
     ],
-    payment: 55,
+    payment: 15.45,
     computeHours: 30,
     tokenCost: 40_000_000,
     capability: "coding",
@@ -513,7 +497,7 @@ export const PROJECTS: ProjectDef[] = [
       "Wire up push notifications",
       "Ship a seller dashboard",
     ],
-    payment: 60,
+    payment: 40,
     computeHours: 34,
     tokenCost: 45_000_000,
     capability: "coding",
@@ -537,7 +521,7 @@ export const PROJECTS: ProjectDef[] = [
       "Tune pacing and reward curves",
       "Expose seeds and debug overlays",
     ],
-    payment: 50,
+    payment: 21,
     computeHours: 22,
     tokenCost: 25_000_000,
     capability: "math",
@@ -561,7 +545,7 @@ export const PROJECTS: ProjectDef[] = [
       "Refuse unsupported questions cleanly",
       "Score quality against an eval set",
     ],
-    payment: 25,
+    payment: 6.34,
     computeHours: 22,
     tokenCost: 35_000_000,
     capability: "embedding",
@@ -585,7 +569,7 @@ export const PROJECTS: ProjectDef[] = [
       "Build an operator review dashboard",
       "Report precision and recall by class",
     ],
-    payment: 55,
+    payment: 25,
     computeHours: 25,
     tokenCost: 30_000_000,
     capability: "vision",
@@ -609,7 +593,7 @@ export const PROJECTS: ProjectDef[] = [
       "Document every model and column",
       "Schedule daily orchestrated runs",
     ],
-    payment: 50,
+    payment: 14.02,
     computeHours: 26,
     tokenCost: 38_000_000,
     capability: "coding",
@@ -633,7 +617,7 @@ export const PROJECTS: ProjectDef[] = [
       "Backtest against historical churn",
       "Publish a scoring endpoint",
     ],
-    payment: 55,
+    payment: 22,
     computeHours: 20,
     tokenCost: 28_000_000,
     capability: "math",
@@ -657,7 +641,7 @@ export const PROJECTS: ProjectDef[] = [
       "Mix sound design and a voiceover bed",
       "Export 16:9, 1:1 and 9:16 cuts",
     ],
-    payment: 130,
+    payment: 36,
     computeHours: 30,
     tokenCost: 60_000_000,
     capability: "video",
@@ -686,7 +670,7 @@ export const PROJECTS: ProjectDef[] = [
       "Interpolate remote entities smoothly",
       "Build a latency test harness",
     ],
-    payment: 150,
+    payment: 135,
     computeHours: 60,
     tokenCost: 120_000_000,
     capability: "coding",
@@ -710,7 +694,7 @@ export const PROJECTS: ProjectDef[] = [
       "Compare against the base model",
       "Quantise and serve the tuned model",
     ],
-    payment: 750,
+    payment: 345,
     computeHours: 90,
     tokenCost: 260_000_000,
     capability: "reasoning",
@@ -735,7 +719,7 @@ export const PROJECTS: ProjectDef[] = [
       "Evaluate with recall and nDCG",
       "Serve ranked results at low latency",
     ],
-    payment: 90,
+    payment: 120,
     computeHours: 65,
     tokenCost: 150_000_000,
     capability: "embedding",
@@ -759,7 +743,7 @@ export const PROJECTS: ProjectDef[] = [
       "Plan zero-downtime cutovers",
       "Write rollback runbooks",
     ],
-    payment: 290,
+    payment: 235,
     computeHours: 100,
     tokenCost: 240_000_000,
     capability: "coding",
@@ -783,7 +767,7 @@ export const PROJECTS: ProjectDef[] = [
       "Package tokens for code and design tools",
       "Publish a multi-chapter guideline",
     ],
-    payment: 100,
+    payment: 56,
     computeHours: 50,
     tokenCost: 90_000_000,
     capability: "image",
@@ -807,7 +791,7 @@ export const PROJECTS: ProjectDef[] = [
       "Extract win and loss themes",
       "Deliver strategic recommendations",
     ],
-    payment: 460,
+    payment: 170,
     computeHours: 55,
     tokenCost: 160_000_000,
     capability: "reasoning",
@@ -836,7 +820,7 @@ export const PROJECTS: ProjectDef[] = [
       "Log an auditable action trail",
       "Handle handoff and escalation",
     ],
-    payment: 2000,
+    payment: 1500,
     computeHours: 200,
     tokenCost: 900_000_000,
     capability: "agentic",
@@ -861,7 +845,7 @@ export const PROJECTS: ProjectDef[] = [
       "Write cited research briefs",
       "Keep a reproducible evidence trail",
     ],
-    payment: 1750,
+    payment: 1260,
     computeHours: 160,
     tokenCost: 800_000_000,
     capability: "agentic",
@@ -885,7 +869,7 @@ export const PROJECTS: ProjectDef[] = [
       "Add captions and thumbnail art",
       "Export per-platform cuts and formats",
     ],
-    payment: 1550,
+    payment: 410,
     computeHours: 140,
     tokenCost: 650_000_000,
     capability: "video",
@@ -976,22 +960,6 @@ export const PROJECT_CATEGORY_META: Record<
     tone: "solar",
   },
 };
-
-/**
- * Calibrated fair value of a run in USD — the compute plus token cost of
- * producing the deliverable, before any difficulty margin.
- */
-export function fairValue(project: ProjectDef): number {
-  return (
-    project.computeHours * REFERENCE_COMPUTE_PRICE +
-    (project.tokenCost / 1_000_000) * REFERENCE_TOKEN_PRICE[project.capability]
-  );
-}
-
-/** Margin as a fraction of the payout: (payment - fairValue) / payment. */
-export function margin(project: ProjectDef): number {
-  return (project.payment - fairValue(project)) / project.payment;
-}
 
 /** True when a fleet of the given tier is strong enough to attempt the run. */
 export function canRun(project: ProjectDef, tier: FleetTier): boolean {

@@ -189,7 +189,18 @@ export interface BuildRun {
   /** Final payout, credited on completion. */
   payout: number;
   fleetTierAtLaunch: FleetTier;
+  /**
+   * What an hour cost on the rig this run launched on.
+   *
+   * A reservation is really a *dollar* amount held out of the pool, and the pool
+   * is re-denominated whenever the flagship changes. Aborting a run after a
+   * switch therefore has to refund the value that was reserved, not the raw hour
+   * count — otherwise a cheap-iron abort would pay out at H100 rates.
+   */
+  hourRateAtLaunch: number;
   label: string;
+  /** Fraction of the contract's fresh premium the market still paid (0–1). */
+  marketHeat: number;
   /** Decided at launch, revealed at completion. Spot capacity is not forever. */
   willFail: boolean;
   /**

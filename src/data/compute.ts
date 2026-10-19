@@ -24,11 +24,10 @@ import type { ComputePlan, FleetTier, GPUClass } from "@/lib/types";
  * box is the most cost-effective per workload-hour, while a big rig finishes in
  * a fraction of the wall-clock time and bills a premium for the privilege.
  *
- * Measured against `REFERENCE_COMPUTE_PRICE` (0.6 $/workload-hour) the tiers
- * land at roughly:
+ * Speed and price per tier land at roughly:
  *   tier      1      2      3      4      5
  *   speed    0.4x   1.6x   2.0x   2.7x   5.0x
- *   $/w-h    0.15   0.25   0.55   1.00   2.50
+ *   $/h      0.02   0.24   1.10   2.49   9.40
  */
 export function speedMultiplier(plan: { tflops: number; vcpus: number }): number {
   const gpu = Math.pow(Math.max(plan.tflops, 0.1), 0.3);
@@ -446,9 +445,6 @@ export const COMPUTE_PLANS: ComputePlan[] = [
 export const COMPUTE_BY_ID: Record<string, ComputePlan> = Object.fromEntries(
   COMPUTE_PLANS.map((plan) => [plan.id, plan]),
 );
-
-/** The $/hour anchor every project payout is calibrated against. */
-export const REFERENCE_COMPUTE_PRICE = 0.6;
 
 /**
  * What one *workload* hour really costs on this rig: the sticker price divided

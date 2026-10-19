@@ -9,11 +9,11 @@ import { Modal } from "@/components/ui/Modal";
 import { Progress } from "@/components/ui/Progress";
 import {
   COMPUTE_TIER_META,
-  REFERENCE_COMPUTE_PRICE,
   costPerWorkloadHour,
   speedMultiplier,
 } from "@/data/compute";
 import {
+  STOCK_HOUR_RATE,
   bulkDiscount,
   planEfficiency,
   planHourCost,
@@ -55,7 +55,7 @@ export function RigDetailModal({
   const efficiency = planEfficiency(plan);
 
   const safeFleetSpeed = Math.max(fleetSpeed, 0.01);
-  const fleetRate = fleetPlan ? fleetPlan.pricePerHour : REFERENCE_COMPUTE_PRICE;
+  const fleetRate = fleetPlan ? fleetPlan.pricePerHour : STOCK_HOUR_RATE;
   const rigReserved = WORKLOAD_HOURS / speed;
   const nowReserved = WORKLOAD_HOURS / safeFleetSpeed;
   const rigCost = round2(rigReserved * plan.pricePerHour);

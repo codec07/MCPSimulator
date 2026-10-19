@@ -24,6 +24,7 @@ import { MODEL_BY_ID, blendedPricePer1M } from "@/data/models";
 import { cn } from "@/lib/cn";
 import {
   MAX_BATCH,
+  batchPayoutOf,
   cheapestModelFor,
   maxBatchFromProjection,
   modelsFor,
@@ -110,7 +111,8 @@ export function ProjectDetailModal({
 
   const batchHours = projection.billedHours * runs;
   const batchTokens = def.tokenCost * runs;
-  const batchPayout = projection.payout * runs;
+  // Each copy lands into a colder market than the one before it.
+  const batchPayout = batchPayoutOf(def, shipped, runs, projection.avgQuality);
 
   const cashAfter = cash + batchPayout;
   const hoursAfter = Math.max(0, computeHours - batchHours);
@@ -124,25 +126,25 @@ export function ProjectDetailModal({
 
   const econRows: EconRow[] = [
     {
-      label: "Base payout",
+      label: "List fee",
       base: money2(projection.basePayout),
       rig: money2(projection.basePayout),
     },
     {
-      label: "Fleet bonus",
+      label: "Market heat",
       base: "—",
-      rig: `${multiplier(projection.fleetBonus)} · ${fleet.name}`,
+      rig: `${multiplier(projection.marketHeat)} · ${shipped} shipped`,
     },
     {
-      label: "Model quality bonus",
+      label: "Model quality",
       base: "—",
-      rig: `${multiplier(projection.qualityBonus)} · avg q${Math.round(
+      rig: `${multiplier(projection.qualityPremium)} · avg q${Math.round(
         projection.avgQuality,
       )}`,
     },
     {
       label: "Final payout",
-      base: money2(projection.basePayout),
+      base: money2(projection.payout),
       rig: money2(projection.payout),
       strong: true,
     },
@@ -484,7 +486,7 @@ export function ProjectDetailModal({
           </span>
           <span className="num text-fog-500">{fleet.tflops} TFLOPS</span>
           <span className="num text-fog-500">
-            {money2(payoutPerHour(projection))}/h
+            {money2(payoutPerHour(projection))}/h revenue
           </span>
         </div>
 

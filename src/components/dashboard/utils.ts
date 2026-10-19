@@ -9,7 +9,7 @@
 
 import type { Tone } from "@/components/ui/Badge";
 import { modelQualityTier } from "@/data/models";
-import { BAILOUT_HOURS, COMPUTE_REPLACEMENT_RATE } from "@/lib/economy";
+import { BAILOUT_HOURS } from "@/lib/economy";
 import type { BuildRun, ModelDef, TokenHolding, Tx } from "@/lib/types";
 
 /* ============================================================
@@ -94,10 +94,16 @@ const MAX_POINTS = 24;
  * `Tx.amount`. Net worth adds nothing on a purchase, because the cash simply
  * becomes an asset. Compute hours and token counts are not stored
  * per-transaction, so their series convert the dollars that moved into units at
- * the account's own replacement rates; the reconstruction is then anchored to
- * today's true value, which keeps the shape honest and the endpoint correct.
+ * the account's own hour rate and token rate; the reconstruction is then
+ * anchored to today's true value, which keeps the shape honest and the endpoint
+ * correct.
  */
-function deltaOf(tx: Tx, metric: SeriesMetric, tokensPerDollar: number): number {
+function deltaOf(
+  tx: Tx,
+  metric: SeriesMetric,
+  tokensPerDollar: number,
+  hourRate: number,
+): number {
   switch (metric) {
     case "cash":
       return tx.amount;
@@ -112,7 +118,7 @@ function deltaOf(tx: Tx, metric: SeriesMetric, tokensPerDollar: number): number 
       }
     case "compute":
       if (tx.kind === "purchase-compute") {
-        return Math.abs(tx.amount) / COMPUTE_REPLACEMENT_RATE;
+        return hourRate > 0 ? Math.abs(tx.amount) / hourRate : 0;
       }
       if (tx.kind === "bailout") return BAILOUT_HOURS;
       return 0;
@@ -139,10 +145,11 @@ function eventsFor(
   metric: SeriesMetric,
   tokensPerDollar: number,
   runs: BuildRun[],
+  hourRate: number,
 ): MetricEvent[] {
   const events: MetricEvent[] = history.map((tx) => ({
     at: tx.at,
-    delta: deltaOf(tx, metric, tokensPerDollar),
+    delta: deltaOf(tx, metric, tokensPerDollar, hourRate),
   }));
 
   if (metric === "compute" || metric === "tokens") {
@@ -159,15 +166,19 @@ function eventsFor(
  * Reconstruct a metric's trajectory from the ledger and the run log, and pin the
  * final point to `anchor`. Fewer than two points collapses to a short flat
  * series so a fresh account shows a calm line rather than invented noise.
+ *
+ * `hourRate` is what an hour costs on the player's current rig — purchases are
+ * logged in dollars only, so it is the best available conversion.
  */
 export function historySeries(
   history: Tx[],
   metric: SeriesMetric,
   anchor: number,
   tokensPerDollar: number,
+  hourRate: number,
   runs: BuildRun[] = [],
 ): number[] {
-  const events = eventsFor(history, metric, tokensPerDollar, runs);
+  const events = eventsFor(history, metric, tokensPerDollar, runs, hourRate);
   if (events.length === 0) return [anchor, anchor];
 
   let running = anchor - events.reduce((sum, event) => sum + event.delta, 0);
