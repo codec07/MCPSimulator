@@ -6,6 +6,7 @@ import { AlertCenter } from "@/components/layout/AlertCenter";
 import { NavBar } from "@/components/layout/NavBar";
 import { SimClock } from "@/components/layout/SimClock";
 import { WelcomeOverlay } from "@/components/layout/WelcomeOverlay";
+import { STARTING_CASH, STARTING_COMPUTE_HOURS } from "@/lib/economy";
 
 import "./globals.css";
 
@@ -23,8 +24,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "MCP Simulator — build things with fake money",
-  description:
-    "A no-signup simulator: start with $100 in play money and 10 free compute hours, buy model tokens and GPU time, then ship projects to earn more.",
+  description: `A no-signup simulator: start with $${STARTING_CASH} in play money and ${STARTING_COMPUTE_HOURS} free compute hours, buy model tokens and GPU time, then ship projects to earn more.`,
   applicationName: "MCP Simulator",
 };
 
@@ -61,7 +61,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 fictional. No accounts, no payments, no servers.
               </p>
               <p className="num text-fog-500">
-                sim v1.0 · 52 models · 16 rigs · 34 contracts
+                sim v1.1 · 52 models · 16 rigs · 34 contracts
               </p>
             </div>
           </footer>

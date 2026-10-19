@@ -126,6 +126,12 @@ function ProjectCardBase({
             <div className="flex items-center gap-2 rounded-xl border border-mint-400/25 bg-mint-500/10 px-2.5 py-2 text-[11px] text-mint-300">
               <Icon name="CheckCircle2" size={12} />
               <span className="font-medium">Ready to launch on your rig</span>
+              {row.maxBatch > 1 ? (
+                <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md border border-aqua-400/30 bg-aqua-500/10 px-1.5 py-0.5 text-[10px] text-aqua-300">
+                  <Icon name="Zap" size={10} />
+                  batch ×{row.maxBatch}
+                </span>
+              ) : null}
             </div>
           )}
 

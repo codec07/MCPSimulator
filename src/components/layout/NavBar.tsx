@@ -10,6 +10,9 @@ import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/cn";
 import {
   LOW_BALANCE_THRESHOLD,
+  STARTING_CASH,
+  STARTING_COMPUTE_HOURS,
+  groupRuns,
   hoursInUse,
   totalTokens,
 } from "@/lib/economy";
@@ -83,6 +86,8 @@ export function NavBar() {
 
   const low = cash < LOW_BALANCE_THRESHOLD;
   const running = runs.filter((r) => r.status === "running");
+  // A batch is one job, however many runs are behind it.
+  const groups = groupRuns(running);
   const inUse = now === null ? 0 : hoursInUse(runs, now);
   const pool = totalTokens(holdings);
 
@@ -161,7 +166,11 @@ export function NavBar() {
 
             {running.length > 0 && (
               <div
-                title={`${running.length} build${running.length === 1 ? "" : "s"} running`}
+                title={
+                  running.length === groups.length
+                    ? `${running.length} build${running.length === 1 ? "" : "s"} running`
+                    : `${groups.length} job${groups.length === 1 ? "" : "s"} · ${running.length} runs in flight`
+                }
                 className="flex items-center gap-2 rounded-xl border border-mint-400/40 bg-mint-500/10 px-2.5 py-1.5"
               >
                 <span className="relative flex h-2 w-2">
@@ -169,7 +178,7 @@ export function NavBar() {
                   <span className="relative inline-flex h-2 w-2 rounded-full bg-mint-400" />
                 </span>
                 <span className="num text-[13px] font-semibold text-mint-300">
-                  {running.length}
+                  {groups.length}
                 </span>
                 <span className="hidden text-[9px] uppercase tracking-[0.12em] text-mint-400/80 sm:block">
                   live
@@ -194,7 +203,7 @@ export function NavBar() {
         open={confirmReset}
         onClose={() => setConfirmReset(false)}
         title="Reset everything?"
-        subtitle="Your balance, tokens, hardware and build history will be wiped back to $100 and 10 free compute hours."
+        subtitle={`Your balance, tokens, hardware and build history will be wiped back to $${STARTING_CASH} and ${STARTING_COMPUTE_HOURS} free compute hours.`}
         icon={<Icon name="RotateCcw" size={16} />}
         tone="ember"
         size="sm"

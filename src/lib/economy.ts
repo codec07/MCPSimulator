@@ -36,8 +36,8 @@ import type {
    Boot constants
    ============================================================ */
 
-export const STATE_VERSION = 3;
-export const STARTING_CASH = 100;
+export const STATE_VERSION = 4;
+export const STARTING_CASH = 20;
 export const STARTING_COMPUTE_HOURS = 10;
 export const LOW_BALANCE_THRESHOLD = 5;
 export const BAILOUT_CASH = 20;
@@ -378,6 +378,116 @@ export function isRunnable(
   const p = projectionOf(def, state.fleet, state.holdings);
   if (!p.tokensOk) return { ok: false, reason: "tokens" };
   return { ok: true, reason: null };
+}
+
+/* ============================================================
+   Batching
+   ============================================================ */
+
+/**
+ * Hard ceiling on one batch.
+ *
+ * A batch is N *independent* runs that happen to share a launch, a timer and a
+ * label. Nothing about the economy changes — this only bounds how many run
+ * records a single click can create.
+ */
+export const MAX_BATCH = 50;
+
+/** Tokens the player holds that could pay this contract's capability bill. */
+export function eligibleTokenPool(
+  def: ProjectDef,
+  holdings: Record<string, { tokens: number }>,
+): number {
+  return MODELS.filter((m) => m.capabilities.includes(def.capability)).reduce(
+    (sum, m) => sum + Math.max(0, holdings[m.id]?.tokens ?? 0),
+    0,
+  );
+}
+
+/**
+ * How many copies of this contract the player could launch right now — limited
+ * by the fleet tier, the free hours, the eligible token pool, and `MAX_BATCH`.
+ * `0` means not even one run fits.
+ *
+ * A run always costs exactly `tokenCost` tokens and reserves exactly
+ * `billedHours` hours (the fleet does not change mid-batch), so the bound is a
+ * plain floor division on each resource.
+ */
+export function maxBatchFor(
+  def: ProjectDef,
+  fleet: { tflops: number; vcpus: number; tier: FleetTier },
+  holdings: Record<string, { tokens: number }>,
+  computeHours: number,
+): number {
+  return maxBatchFromProjection(
+    def,
+    projectionOf(def, fleet, holdings),
+    fleet.tier,
+    holdings,
+    computeHours,
+  );
+}
+
+/**
+ * The same bound, for callers that have *already* priced the job — the make
+ * grid and the detail modal both hold a `BuildProjection` and would otherwise
+ * run the token plan twice.
+ */
+export function maxBatchFromProjection(
+  def: ProjectDef,
+  projection: BuildProjection,
+  fleetTier: FleetTier,
+  holdings: Record<string, { tokens: number }>,
+  computeHours: number,
+): number {
+  if (fleetTier < def.minFleetTier) return 0;
+  if (projection.billedHours <= 0 || def.tokenCost <= 0) return 0;
+
+  const byHours = Math.floor((computeHours + 1e-9) / projection.billedHours);
+  const byTokens = Math.floor(
+    (eligibleTokenPool(def, holdings) + 1e-9) / def.tokenCost,
+  );
+
+  return clamp(Math.min(byHours, byTokens, MAX_BATCH), 0, MAX_BATCH);
+}
+
+/**
+ * A batch renders as one card, so the UI needs runs collapsed back into the
+ * launches that created them. Order is preserved (newest first, as stored).
+ */
+export interface BuildGroup {
+  /** React key: the batch id, or the lone run's id. */
+  key: string;
+  runs: BuildRun[];
+  /** True when one click created every run in here. */
+  batched: boolean;
+  label: string;
+  projectId: string;
+}
+
+export function groupRuns(runs: BuildRun[]): BuildGroup[] {
+  const groups: BuildGroup[] = [];
+  const seen = new Map<string, BuildGroup>();
+
+  for (const run of runs) {
+    const key = run.batchId ?? run.id;
+    const existing = seen.get(key);
+    if (existing) {
+      existing.runs.push(run);
+      continue;
+    }
+    const group: BuildGroup = {
+      key,
+      runs: [run],
+      batched: Boolean(run.batchId),
+      label: run.label,
+      projectId: run.projectId,
+    };
+    seen.set(key, group);
+    groups.push(group);
+  }
+
+  return groups;
 }
 
 /* ============================================================

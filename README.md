@@ -15,11 +15,14 @@
 A no-signup, offline, single-player simulator for the economics of building
 software with frontier models and rented GPUs.
 
-You start with **$100 of play money** and **10 free compute hours**. You buy
-tokens for specific models and hours on specific rigs, then take contracts that
-consume both and pay out. The interesting part is the trade: cheap iron
-maximises profit per run, big iron maximises profit per minute — and your
-choice of model changes both the token bill and the payout.
+You start with **$20 of play money** and **10 free compute hours** — deliberately
+thin, so the opening move is a real choice between a token pack and the hours to
+run it, and a $4 gig genuinely matters. You buy tokens for specific models and
+hours on specific rigs, then take contracts that consume both and pay out. The
+interesting part is the trade: cheap iron maximises profit per run, big iron
+maximises profit per minute — and your choice of model changes both the token bill
+and the payout. Once you have stock on hand, any contract can be **batched**: run
+it several times over and the whole set reports as a single job.
 
 **Everything in it is fake.** There is no backend, no account, no payment and no
 API call of any kind. The whole simulation runs in your browser and persists to
@@ -31,6 +34,8 @@ API call of any kind. The whole simulation runs in your browser and persists to
 
 - [Quick start](#quick-start)
 - [Your first five minutes](#your-first-five-minutes)
+- [The loop](#the-loop)
+- [Batch builds](#batch-builds)
 - [The economy, precisely](#the-economy-precisely)
 - [Pages](#pages)
 - [What's in the catalog](#whats-in-the-catalog)
@@ -84,7 +89,9 @@ looks wrong, the culprit is almost always stale `localStorage` — see
    project-vs-your-rig economics table, and a before/after balance projection.
 5. **Build it.** Hit **Build**. Tokens are spent immediately; compute hours are
    reserved and released as the bar fills. The navbar shows hours *in use*
-   counting down, and the dashboard grows a live build.
+   counting down, and the dashboard grows a live build. Once one contract is
+   working, the batch controls in the same modal run it 2–50 times at once — see
+   [Batch builds](#batch-builds).
 6. **Get paid.** When the bar lands, the payout hits your cash, the run moves to
    your history, and the dashboard's lifetime stats update. Reload the page
    mid-build and nothing is lost.
@@ -109,6 +116,52 @@ out. Harder work pays more but needs a stronger fleet and a bigger token bill.
 If you run dry, the app notices. Below **$5** you get a warning modal, and any
 purchase or build you can't afford offers a **Free Redeem**: **$20 and 10 hours**,
 instantly, as often as you like. Nothing here is ever gated behind real money.
+
+---
+
+## Batch builds
+
+The Make page has 34 contracts, and the good ones are worth repeating. Rather than
+opening a card, building, waiting, and opening it again, the detail modal carries a
+**Batch size** panel:
+
+- **Custom batch** — a stepper from 1 up to whatever you can currently afford.
+- **Max batch** — one click, fills in the largest batch your stock allows.
+
+`Max batch` is the smallest of three limits:
+
+```
+byHours  = floor(computeHours / billedHours)   // free hours you hold
+byTokens = floor(eligibleTokens / tokenCost)   // tokens the capability accepts
+maxBatch = min(byHours, byTokens, 50)          // 50 is a hard ceiling
+```
+
+So a batch is bounded by whichever resource runs out first. The card shows the
+result as a `batch ×10` chip; the modal spells out which ceiling applied.
+
+**Nothing about the economy changes.** A batch is N *independent* runs launched at
+once:
+
+- Each run burns its own `tokenCost`, reserves its own `billedHours`, and rolls
+  its **own** failure chance. A batch of 10 with a 2% failure rate will usually
+  deliver 9 or 10, occasionally fewer.
+- Each run is priced against the pool the run before it left behind, so a batch of
+  5 costs exactly what 5 separate launches would have — no discount, no rounding
+  drift, no averaging.
+- They share one timer, so all N finish together.
+
+What *does* change is the presentation:
+
+- **One card, not N.** The navbar, dashboard and Make page show a single
+  `Running batch: <contract> ×N` card with combined hours, tokens and payout, plus
+  one **Abort batch** button that releases every run's unconsumed hours at once.
+- **One ledger line, not N.** Settlement writes a single entry —
+  `Shipped batch: Podcast Show Notes ×10 · $73.00`. If some runs failed it reads
+  `Batch settled: … 8/10 delivered · 2 failed · 6.4h compute`; a total loss reads
+  `Batch failed: …`.
+- **Runs still count as runs.** `runsStarted`, `runsCompleted` and `runsFailed`
+  increment per run, because that is what they measure. Only the navbar's *live*
+  pill counts **jobs** — so a batch of 10 shows as `1 live`.
 
 ---
 
@@ -260,7 +313,8 @@ The $4 payout itself is the calibration formula in action:
   **against your own rig**, not against a generic baseline. The detail modal
   shows deliverables, the required capability and which of your pools satisfy
   it, a Project-vs-On-your-rig economics table, a before/after balance
-  projection, and a blocked-aware Build button.
+  projection, batch controls (custom size or `Max batch`), and a blocked-aware
+  Build button. In-flight work collapses to one card per job, batches included.
 
 ---
 
@@ -308,7 +362,7 @@ src/
 │   ├── ui/                   # design system: Card, Button, Badge, Progress, Modal,
 │   │                         #   Icon (152-glyph curated registry), charts, Controls
 │   ├── layout/               # NavBar, AlertCenter, WelcomeOverlay, PageHeader, SimClock
-│   ├── shared/               # BuildProgressCard
+│   ├── shared/               # BuildProgressCard, BatchProgressCard, Ledger
 │   ├── dashboard/ buy/ make/ # page composition
 ├── data/
 │   ├── models.ts             # 52 models — pricing, quality, capabilities, token packs
@@ -331,7 +385,7 @@ modal, and at launch — there is no second implementation to drift.
 ### State and persistence
 
 One `zustand` store, persisted under the `localStorage` key `mcpsim-state`
-(currently schema version `3`). It holds cash, the compute-hour pool, token
+(currently schema version `4`). It holds cash, the compute-hour pool, token
 holdings, your flagship `fleet`, running and settled `runs`, a transaction
 `history`, lifetime `stats`, and the set of contracts you've shipped.
 
@@ -352,6 +406,10 @@ Each run stores `endsAt` rather than a remaining-time counter, so completion is
 *derived* from the wall clock. Reload the page in the middle of a build and the
 run resumes at the right progress and settles correctly. The tick function also
 returns early when nothing is due to finish, so an idle tab does no work.
+
+Runs that came from one batch share an `endsAt`, so an entire batch settles inside
+a single tick — which is what lets settlement collapse it into one ledger line
+instead of N.
 
 ### Hydration is intentional
 
@@ -470,17 +528,23 @@ Whatever the host, check two things after the first deploy:
 - **No SPA catch-all.** Don't add a `/* /index.html 200` fallback — every route
   has its own HTML file, and the catch-all would swallow your `404.html`.
 
-`localStorage` is scoped per origin, so each deploy URL starts from a fresh $100
+`localStorage` is scoped per origin, so each deploy URL starts from a fresh $20
 and keeps its own save. That's expected, not a bug.
 
 ---
 
 ## Resetting
 
-The reset button in the navbar wipes your local state back to $100 and 10 hours.
+The reset button in the navbar wipes your local state back to $20 and 10 hours.
 Clearing site data does the same thing. If the UI ever looks inconsistent after
 an update, reset first — a schema change with stale storage is the most likely
 cause.
+
+Saved state carries a schema version (`STATE_VERSION` in `src/lib/economy.ts`).
+When it is bumped — as it was for **v1.1**, which reset the opening float to $20
+and added batch runs — the next load discards the old blob and drops you at a
+fresh start, welcome overlay and all. That is deliberate: saves are not
+balance-patched across a rebalance.
 
 ---
 
@@ -508,6 +572,11 @@ A browser extension is editing the page before React loads. `<body>` carries
 `cz-shortcut-listen`, Grammarly, and friends). It is dev-only noise and does not
 affect the build.
 
+**Why is my batch capped at, say, 10?** Something ran out. `Max batch` is the
+smaller of your free hours divided by the hours one run reserves, and your
+eligible tokens divided by the tokens one run burns. Buy whichever is short — the
+modal shows the per-run cost so you can see which one binds.
+
 **Can I run it offline?** Yes — `npm run build` then `npm run start`, or any
 static export. Nothing phones home.
 
@@ -528,6 +597,13 @@ static export. Nothing phones home.
   value. None of them fall below profitable.
 - **Single player, single browser.** State is one `localStorage` blob. No sync,
   no export, no undo beyond the reset button.
+- **Batches are scheduled as truly parallel.** Every run in a batch shares one
+  timer and finishes together, as though the rig had unlimited capacity. Ten
+  heavy runs on one GPU would in reality contend for it. The *economics* stay
+  honest — each run pays its own hours and tokens — but the scheduling is
+  idealised.
+- **50 runs is the batch ceiling.** It keeps `localStorage` small and the numbers
+  legible, not because of any economic constraint.
 
 ---
 

@@ -25,7 +25,7 @@ const STEPS = [
     icon: "Rocket",
     tone: "text-mint-300",
     title: "Build",
-    body: "Pick from 34 contracts — landing pages, fine-tunes, agent pipelines. Each one burns tokens and compute while a live progress bar runs.",
+    body: "Pick from 34 contracts — landing pages, fine-tunes, agent pipelines. Each one burns tokens and compute while a live progress bar runs, and any contract can be batched: run it several times over and the whole set reports as one card.",
   },
   {
     icon: "TrendingUp",

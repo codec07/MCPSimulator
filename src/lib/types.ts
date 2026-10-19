@@ -192,6 +192,16 @@ export interface BuildRun {
   label: string;
   /** Decided at launch, revealed at completion. Spot capacity is not forever. */
   willFail: boolean;
+  /**
+   * Shared by every run one batch launch created. Absent on a lone build.
+   *
+   * The runs stay fully independent — each burns its own tokens, reserves its
+   * own hours and rolls its own failure — the id only groups them for display
+   * and for invoicing the batch as a single line in the ledger.
+   */
+  batchId?: string;
+  /** How many runs that launch produced. Absent on a lone build. */
+  batchSize?: number;
 }
 
 export type TxKind =

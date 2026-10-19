@@ -2,11 +2,12 @@
 
 import type { ReactElement } from "react";
 
+import { BatchProgressCard } from "@/components/shared/BatchProgressCard";
 import { BuildProgressCard } from "@/components/shared/BuildProgressCard";
 import { Badge } from "@/components/ui/Badge";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
-import { hoursInUse } from "@/lib/economy";
+import { groupRuns, hoursInUse } from "@/lib/economy";
 import { hours, money2 } from "@/lib/format";
 import { useNow } from "@/lib/hooks";
 import { useSim } from "@/lib/store";
@@ -18,8 +19,10 @@ export function LiveBuilds(): ReactElement {
   const now = useNow();
   const runs = useSim((s) => s.runs);
   const cancelBuild = useSim((s) => s.cancelBuild);
+  const cancelBatch = useSim((s) => s.cancelBatch);
 
   const running = runs.filter((r) => r.status === "running");
+  const groups = groupRuns(running);
   const locked = running.reduce((sum, run) => sum + run.billedHours, 0);
   const inUse = now === null ? 0 : hoursInUse(running, now);
   const atStake = running.reduce((sum, run) => sum + run.payout, 0);
@@ -37,6 +40,13 @@ export function LiveBuilds(): ReactElement {
               compute locked up ·{" "}
               <span className="num text-fog-300">{hours(inUse)}</span> still
               burning
+              {running.length !== groups.length && (
+                <>
+                  {" · "}
+                  <span className="num text-fog-300">{running.length}</span> runs
+                  in {groups.length} {groups.length === 1 ? "job" : "jobs"}
+                </>
+              )}
             </>
           ) : (
             "nothing on the clock right now"
@@ -45,7 +55,7 @@ export function LiveBuilds(): ReactElement {
         action={
           running.length > 0 ? (
             <Badge tone="aqua" size="md" dot>
-              {running.length} running
+              {groups.length} running
             </Badge>
           ) : undefined
         }
@@ -60,9 +70,21 @@ export function LiveBuilds(): ReactElement {
           </div>
 
           <div className="flex flex-col gap-4">
-            {running.map((run, index) => (
-              <div key={run.id} className="animate-rise" style={riseDelay(index)}>
-                <BuildProgressCard run={run} now={now} onCancel={cancelBuild} />
+            {groups.map((group, index) => (
+              <div key={group.key} className="animate-rise" style={riseDelay(index)}>
+                {group.batched ? (
+                  <BatchProgressCard
+                    group={group}
+                    now={now}
+                    onAbort={cancelBatch}
+                  />
+                ) : (
+                  <BuildProgressCard
+                    run={group.runs[0]}
+                    now={now}
+                    onCancel={cancelBuild}
+                  />
+                )}
               </div>
             ))}
           </div>

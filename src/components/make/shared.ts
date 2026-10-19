@@ -61,6 +61,8 @@ export interface ProjectRow {
   /** Personalised to the player's current fleet + holdings. */
   projection: BuildProjection;
   readiness: Runnability;
+  /** How many copies one click could launch right now (1 = no batch room). */
+  maxBatch: number;
 }
 
 /* ============================================================

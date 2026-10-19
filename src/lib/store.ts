@@ -22,6 +22,7 @@ import {
   STOCK_FLEET,
   STATE_VERSION,
   clamp,
+  maxBatchFor,
   planHourCost,
   projectionOf,
   round2,
@@ -82,7 +83,7 @@ function initialState(): SimState {
         kind: "grant",
         amount: STARTING_CASH,
         label: "Starting grant",
-        detail: "$100 play-money float and 10 free compute hours",
+        detail: `$${STARTING_CASH} play-money float and ${STARTING_COMPUTE_HOURS} free compute hours`,
         at: Date.now(),
       },
     ],
@@ -120,8 +121,11 @@ export interface SimStore extends SimState {
   tick: () => void;
   buyTokens: (modelId: string, packId: string) => ActionResult;
   buyCompute: (planId: string, hours: number) => ActionResult;
-  startBuild: (projectId: string) => ActionResult;
+  /** Launches one run, or `count` of them as a single batch. */
+  startBuild: (projectId: string, count?: number) => ActionResult;
   cancelBuild: (runId: string) => ActionResult;
+  /** Aborts every still-running member of a batch, with one ledger line. */
+  cancelBatch: (runIds: string[]) => ActionResult;
   redeemBailout: () => void;
   setAlert: (alert: AlertState) => void;
   clearAlert: () => void;
@@ -148,6 +152,7 @@ const PERSIST_SKIP: readonly string[] = [
   "buyCompute",
   "startBuild",
   "cancelBuild",
+  "cancelBatch",
   "redeemBailout",
   "setAlert",
   "clearAlert",
@@ -176,15 +181,18 @@ export const useSim = create<SimStore>()(
         );
         if (!finished.length) return;
 
+        const done = new Set(finished.map((r) => r.id));
+
         let cash = state.cash;
-        let history = state.history;
         const stats = { ...state.stats };
         const completed = { ...state.completed };
-        const ownedPlans = [...state.ownedPlans];
-        const ownedModels = [...state.ownedModels];
+
+        /** What each finished run actually paid, so a batch bills as one line. */
+        const settled: { run: BuildRun; delivered: boolean; credited: number }[] =
+          [];
 
         const runs = state.runs.map((run) => {
-          if (!finished.some((f) => f.id === run.id)) return run;
+          if (!done.has(run.id)) return run;
 
           if (run.willFail) {
             // Spot capacity evaporated. Partial delivery, compute released.
@@ -192,15 +200,7 @@ export const useSim = create<SimStore>()(
             cash = round2(cash + partial);
             stats.runsFailed += 1;
             stats.totalEarned = round2(stats.totalEarned + partial);
-            history = pushHistory(
-              history,
-              tx(
-                "penalty",
-                partial,
-                `${run.label} — partial delivery`,
-                `Run failed on ${run.fleetTierAtLaunch >= 4 ? "high-tier" : "spot"} capacity. 30% of payout credited, compute released.`,
-              ),
-            );
+            settled.push({ run, delivered: false, credited: partial });
             return {
               ...run,
               status: "failed" as const,
@@ -212,21 +212,71 @@ export const useSim = create<SimStore>()(
           stats.runsCompleted += 1;
           stats.totalEarned = round2(stats.totalEarned + run.payout);
           completed[run.projectId] = (completed[run.projectId] ?? 0) + 1;
-          history = pushHistory(
-            history,
-            tx(
-              "project-payout",
-              run.payout,
-              `Shipped: ${run.label}`,
-              `${run.tokenSources.length} token pool${run.tokenSources.length === 1 ? "" : "s"} · ${run.billedHours.toFixed(1)}h compute`,
-            ),
-          );
+          settled.push({ run, delivered: true, credited: run.payout });
           return {
             ...run,
             status: "done" as const,
             hoursConsumed: run.billedHours,
           };
         });
+
+        // Runs that shared a launch share a ledger line too. A lone run keeps
+        // exactly the entry it had before batching existed.
+        const groups = new Map<string, typeof settled>();
+        for (const entry of settled) {
+          const key = entry.run.batchId ?? entry.run.id;
+          const bucket = groups.get(key);
+          if (bucket) bucket.push(entry);
+          else groups.set(key, [entry]);
+        }
+
+        let history = state.history;
+
+        for (const group of groups.values()) {
+          const head = group[0].run;
+          const count = group.length;
+          const delivered = group.filter((g) => g.delivered).length;
+          const failed = count - delivered;
+          const credited = round2(group.reduce((sum, g) => sum + g.credited, 0));
+
+          if (count === 1) {
+            history = pushHistory(
+              history,
+              group[0].delivered
+                ? tx(
+                    "project-payout",
+                    credited,
+                    `Shipped: ${head.label}`,
+                    `${head.tokenSources.length} token pool${head.tokenSources.length === 1 ? "" : "s"} · ${head.billedHours.toFixed(1)}h compute`,
+                  )
+                : tx(
+                    "penalty",
+                    credited,
+                    `${head.label} — partial delivery`,
+                    `Run failed on ${head.fleetTierAtLaunch >= 4 ? "high-tier" : "spot"} capacity. 30% of payout credited, compute released.`,
+                  ),
+            );
+            continue;
+          }
+
+          const batchHours = group.reduce((sum, g) => sum + g.run.billedHours, 0);
+
+          history = pushHistory(
+            history,
+            tx(
+              failed === 0 ? "project-payout" : "penalty",
+              credited,
+              failed === 0
+                ? `Shipped batch: ${head.label} ×${count}`
+                : delivered > 0
+                  ? `Batch settled: ${head.label} ×${count}`
+                  : `Batch failed: ${head.label} ×${count}`,
+              failed === 0
+                ? `${count} runs delivered · ${batchHours.toFixed(1)}h compute`
+                : `${delivered}/${count} delivered · ${failed} failed · ${batchHours.toFixed(1)}h compute`,
+            ),
+          );
+        }
 
         // Keep only the most recent resolved runs so storage stays small.
         const resolved = runs.filter((r) => r.status !== "running").length;
@@ -237,15 +287,7 @@ export const useSim = create<SimStore>()(
               )
             : runs;
 
-        set({
-          cash,
-          runs: trimmed,
-          history,
-          stats,
-          completed,
-          ownedPlans,
-          ownedModels,
-        });
+        set({ cash, runs: trimmed, history, stats, completed });
       },
 
       /* ---------------------------------------------------- */
@@ -412,7 +454,7 @@ export const useSim = create<SimStore>()(
       /* ---------------------------------------------------- */
       /* Launching a build                                    */
       /* ---------------------------------------------------- */
-      startBuild: (projectId) => {
+      startBuild: (projectId, count) => {
         const state = get();
         const def = PROJECT_BY_ID[projectId];
         if (!def) return { ok: false, reason: "unknown-project" };
@@ -465,70 +507,121 @@ export const useSim = create<SimStore>()(
           return { ok: false, reason: "compute" };
         }
 
+        // One run definitely fits — the checks above proved it. How many more?
+        // Bounded by the hours left, the eligible token pool, and MAX_BATCH.
+        const available = maxBatchFor(
+          def,
+          state.fleet,
+          state.holdings,
+          state.computeHours,
+        );
+        const batchSize = clamp(
+          Math.floor(count ?? 1) || 1,
+          1,
+          Math.max(1, available),
+        );
+
         const plan = COMPUTE_BY_ID[state.fleet.planId ?? ""] ?? null;
         const reliability = plan?.reliability ?? 88;
-        const willFail = Math.random() < failureRisk(reliability);
+        const risk = failureRisk(reliability);
 
         const now = Date.now();
         const durationSeconds = Math.max(4, p.seconds);
 
-        // Burn tokens up front, reserve compute hours up front.
-        const holdings = { ...state.holdings };
-        for (const s of p.sources) {
-          const cur = holdings[s.modelId];
-          if (!cur) continue;
-          holdings[s.modelId] = { ...cur, tokens: Math.max(0, cur.tokens - s.tokens) };
+        // Burn tokens and reserve hours up front, once per run. Each run is
+        // priced against the pool the run before it left behind, so a batch of
+        // five costs exactly what five separate launches would have.
+        const pool = { ...state.holdings };
+        const fresh: BuildRun[] = [];
+        let hoursReserved = 0;
+        let tokensBurned = 0;
+        let expectedPayout = 0;
+
+        for (let index = 0; index < batchSize; index += 1) {
+          const slice = index === 0 ? p : projectionOf(def, state.fleet, pool);
+          if (!slice.tokensOk) break;
+
+          for (const s of slice.sources) {
+            const cur = pool[s.modelId];
+            if (!cur) continue;
+            pool[s.modelId] = {
+              ...cur,
+              tokens: Math.max(0, cur.tokens - s.tokens),
+            };
+          }
+
+          fresh.push({
+            id: newId("run"),
+            projectId: def.id,
+            status: "running",
+            startedAt: now,
+            endsAt: now + durationSeconds * 1000,
+            durationSeconds,
+            workloadHours: def.computeHours,
+            billedHours: slice.billedHours,
+            hoursConsumed: 0,
+            tokensConsumed: def.tokenCost,
+            tokenSources: slice.sources.map((s) => ({
+              modelId: s.modelId,
+              tokens: s.tokens,
+            })),
+            speedMultiplier: slice.speed,
+            payoutMultiplier: round2(slice.fleetBonus * slice.qualityBonus),
+            payout: slice.payout,
+            fleetTierAtLaunch: state.fleet.tier,
+            label: def.title,
+            willFail: Math.random() < risk,
+          });
+
+          hoursReserved = round2(hoursReserved + slice.billedHours);
+          tokensBurned += def.tokenCost;
+          expectedPayout = round2(expectedPayout + slice.payout);
         }
 
-        const run: BuildRun = {
-          id: newId("run"),
-          projectId: def.id,
-          status: "running",
-          startedAt: now,
-          endsAt: now + durationSeconds * 1000,
-          durationSeconds,
-          workloadHours: def.computeHours,
-          billedHours: p.billedHours,
-          hoursConsumed: 0,
-          tokensConsumed: def.tokenCost,
-          tokenSources: p.sources.map((s) => ({
-            modelId: s.modelId,
-            tokens: s.tokens,
-          })),
-          speedMultiplier: p.speed,
-          payoutMultiplier: round2(p.fleetBonus * p.qualityBonus),
-          payout: p.payout,
-          fleetTierAtLaunch: state.fleet.tier,
-          label: def.title,
-          willFail,
-        };
+        // Only tag the runs when they really are a batch, so a single build
+        // serialises exactly as it always did.
+        const launched = fresh.length;
+        const batch: Pick<BuildRun, "batchId" | "batchSize"> =
+          launched > 1 ? { batchId: newId("batch"), batchSize: launched } : {};
 
         set({
-          holdings,
-          computeHours: round2(state.computeHours - p.billedHours),
-          runs: [run, ...state.runs],
+          holdings: pool,
+          computeHours: round2(state.computeHours - hoursReserved),
+          runs: [...fresh.map((r) => ({ ...r, ...batch })), ...state.runs],
           history: pushHistory(
             state.history,
             tx(
               "build",
               -0,
-              `Started: ${def.title}`,
-              `${p.billedHours.toFixed(1)}h reserved · ${def.tokenCost.toLocaleString(
+              launched > 1
+                ? `Started batch: ${def.title} ×${launched}`
+                : `Started: ${def.title}`,
+              `${hoursReserved.toFixed(1)}h reserved · ${tokensBurned.toLocaleString(
                 "en-US",
-              )} tokens burned · ETA ${Math.round(durationSeconds)}s`,
+              )} tokens burned · ${
+                launched > 1
+                  ? `${launched} runs in parallel, ETA ${Math.round(durationSeconds)}s each`
+                  : `ETA ${Math.round(durationSeconds)}s`
+              }`,
             ),
           ),
           stats: {
             ...state.stats,
-            runsStarted: state.stats.runsStarted + 1,
-            tokensBurned: state.stats.tokensBurned + def.tokenCost,
-            hoursBurned: round2(state.stats.hoursBurned + p.billedHours),
+            runsStarted: state.stats.runsStarted + launched,
+            tokensBurned: state.stats.tokensBurned + tokensBurned,
+            hoursBurned: round2(state.stats.hoursBurned + hoursReserved),
             totalSpent: state.stats.totalSpent,
           },
           alert: null,
         });
 
-        return { ok: true, message: `Running ${def.title}` };
+        return {
+          ok: true,
+          message:
+            launched > 1
+              ? `${launched} × ${def.title} queued · up to $${expectedPayout.toFixed(2)}`
+              : `Running ${def.title}`,
+        };
       },
 
       /* ---------------------------------------------------- */
@@ -561,6 +654,62 @@ export const useSim = create<SimStore>()(
               "build",
               0,
               `Aborted: ${run.label}`,
+              `${refund.toFixed(1)}h of compute released back to the pool`,
+            ),
+          ),
+        });
+        return { ok: true };
+      },
+
+      /* ---------------------------------------------------- */
+      /* Aborting a whole batch at once                       */
+      /* ---------------------------------------------------- */
+      cancelBatch: (runIds) => {
+        const state = get();
+        const now = Date.now();
+        const wanted = new Set(runIds);
+        const targets = state.runs.filter(
+          (r) => r.status === "running" && wanted.has(r.id),
+        );
+        if (!targets.length) return { ok: false, reason: "unknown-project" };
+
+        let refund = 0;
+        const consumedById = new Map<string, number>();
+
+        for (const run of targets) {
+          const consumed =
+            run.billedHours *
+            clamp(
+              (now - run.startedAt) / Math.max(1, run.endsAt - run.startedAt),
+              0,
+              1,
+            );
+          consumedById.set(run.id, consumed);
+          refund += Math.max(0, run.billedHours - consumed);
+        }
+
+        const head = targets[0];
+        const count = targets.length;
+
+        set({
+          computeHours: round2(state.computeHours + refund),
+          runs: state.runs.map((r) =>
+            consumedById.has(r.id)
+              ? {
+                  ...r,
+                  status: "cancelled" as const,
+                  hoursConsumed: consumedById.get(r.id) ?? 0,
+                }
+              : r,
+          ),
+          history: pushHistory(
+            state.history,
+            tx(
+              "build",
+              0,
+              count > 1
+                ? `Aborted batch: ${head.label} ×${count}`
+                : `Aborted: ${head.label}`,
               `${refund.toFixed(1)}h of compute released back to the pool`,
             ),
           ),

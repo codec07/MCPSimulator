@@ -27,6 +27,7 @@ import { PROJECT_BY_ID, PROJECT_CATEGORY_META, PROJECTS } from "@/data/projects"
 import {
   LOW_BALANCE_THRESHOLD,
   isRunnable,
+  maxBatchFromProjection,
   projectionOf,
 } from "@/lib/economy";
 import { hours, money2 } from "@/lib/format";
@@ -53,6 +54,7 @@ export default function MakePage() {
   const sim = useSim((state) => state);
   const startBuild = useSim((state) => state.startBuild);
   const cancelBuild = useSim((state) => state.cancelBuild);
+  const cancelBatch = useSim((state) => state.cancelBatch);
 
   const [category, setCategory] = useState<string>("all");
   const [sort, setSort] = useState<SortKey>("pay");
@@ -115,7 +117,18 @@ export default function MakePage() {
         if (!verdict.ok || computeHours < projection.billedHours) continue;
       }
 
-      found.push({ def, projection, readiness });
+      found.push({
+        def,
+        projection,
+        readiness,
+        maxBatch: maxBatchFromProjection(
+          def,
+          projection,
+          fleet.tier,
+          holdings,
+          computeHours,
+        ),
+      });
     }
 
     return sortRows(found, sort);
@@ -140,6 +153,13 @@ export default function MakePage() {
       def,
       projection,
       readiness: runnabilityOf(def, projection, fleet.tier, computeHours),
+      maxBatch: maxBatchFromProjection(
+        def,
+        projection,
+        fleet.tier,
+        holdings,
+        computeHours,
+      ),
     };
   }, [openId, fleet, holdings, computeHours]);
 
@@ -179,15 +199,18 @@ export default function MakePage() {
   }, []);
 
   const handleBuild = useCallback(
-    (def: ProjectDef) => {
-      const result = startBuild(def.id);
+    (def: ProjectDef, count: number) => {
+      const result = startBuild(def.id, count);
 
       if (result.ok) {
         setOpenId(null);
         setFailReason(null);
         setFlash({
           tone: "mint",
-          title: `Build launched — ${def.title}`,
+          title:
+            count > 1
+              ? `Batch launched — ${def.title} ×${count}`
+              : `Build launched — ${def.title}`,
           message: result.message ?? "Your rig is on it. Watch the live strip.",
         });
         return;
@@ -243,7 +266,11 @@ export default function MakePage() {
         }
       />
 
-      <LiveBuilds runs={runs} onCancel={cancelBuild} />
+      <LiveBuilds
+        runs={runs}
+        onCancel={cancelBuild}
+        onCancelBatch={cancelBatch}
+      />
 
       <MakeFilterBar
         tabs={categoryTabs}

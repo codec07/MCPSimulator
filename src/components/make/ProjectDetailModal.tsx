@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { BuyLink } from "@/components/make/BuyLink";
 import { DifficultyDots } from "@/components/make/DifficultyDots";
@@ -15,13 +15,20 @@ import {
 } from "@/components/make/shared";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Stepper } from "@/components/ui/Controls";
 import { Icon, hasIcon } from "@/components/ui/Icon";
 import { Modal } from "@/components/ui/Modal";
 import { Progress } from "@/components/ui/Progress";
 import { MiniBars } from "@/components/ui/charts";
 import { MODEL_BY_ID, blendedPricePer1M } from "@/data/models";
 import { cn } from "@/lib/cn";
-import { cheapestModelFor, modelsFor, totalTokens } from "@/lib/economy";
+import {
+  MAX_BATCH,
+  cheapestModelFor,
+  maxBatchFromProjection,
+  modelsFor,
+  totalTokens,
+} from "@/lib/economy";
 import type { BuildProjection } from "@/lib/economy";
 import {
   duration,
@@ -75,7 +82,7 @@ export function ProjectDetailModal({
   shipped: number;
   failReason: string | null;
   onClose: () => void;
-  onBuild: (def: ProjectDef) => void;
+  onBuild: (def: ProjectDef, count: number) => void;
 }) {
   const category = categoryMetaOf(def.category);
   const capability = capabilityMetaOf(def.capability);
@@ -89,9 +96,25 @@ export function ProjectDetailModal({
     .sort((a, b) => b.amount - a.amount);
   const cheapest = pools.length === 0 ? cheapestModelFor(def.capability) : null;
 
-  const cashAfter = cash + projection.payout;
-  const hoursAfter = Math.max(0, computeHours - projection.billedHours);
-  const tokensAfter = Math.max(0, held - def.tokenCost);
+  const [count, setCount] = useState(1);
+
+  const maxBatch = maxBatchFromProjection(
+    def,
+    projection,
+    fleet.tier,
+    holdings,
+    computeHours,
+  );
+  const batchCap = Math.max(1, maxBatch);
+  const runs = Math.min(Math.max(1, count), batchCap);
+
+  const batchHours = projection.billedHours * runs;
+  const batchTokens = def.tokenCost * runs;
+  const batchPayout = projection.payout * runs;
+
+  const cashAfter = cash + batchPayout;
+  const hoursAfter = Math.max(0, computeHours - batchHours);
+  const tokensAfter = Math.max(0, held - batchTokens);
   const marginPct = Math.max(0, Math.min(100, projection.marginPct * 100));
   const phases = phaseShape(def);
 
@@ -184,13 +207,15 @@ export function ProjectDetailModal({
           <Button
             variant={readiness.ok ? "success" : "secondary"}
             disabled={!readiness.ok}
-            onClick={() => onBuild(def)}
+            onClick={() => onBuild(def, runs)}
             leftIcon={
               <Icon name={readiness.ok ? "Rocket" : "Lock"} size={14} />
             }
           >
             {readiness.ok
-              ? `Build this — ETA ${duration(projection.seconds)}`
+              ? runs > 1
+                ? `Build ${runs} × — ETA ${duration(projection.seconds)}`
+                : `Build this — ETA ${duration(projection.seconds)}`
               : readiness.short}
           </Button>
         </>
@@ -346,6 +371,106 @@ export function ProjectDetailModal({
         </div>
       </Section>
 
+      {/* Batch */}
+      <Section icon="Copy" title="Batch size">
+        <div className="rounded-xl border border-abyss-600/50 bg-abyss-900/50 p-3">
+          {maxBatch > 1 ? (
+            <>
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Stepper
+                    value={runs}
+                    min={1}
+                    max={batchCap}
+                    onChange={setCount}
+                    label={
+                      maxBatch >= MAX_BATCH
+                        ? `runs at once (capped at ${MAX_BATCH})`
+                        : "runs at once"
+                    }
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={runs >= batchCap}
+                    onClick={() => setCount(batchCap)}
+                    leftIcon={<Icon name="Zap" size={13} />}
+                  >
+                    Max batch · {batchCap}
+                  </Button>
+                  {runs > 1 ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setCount(1)}
+                      leftIcon={<Icon name="RotateCcw" size={13} />}
+                    >
+                      Single
+                    </Button>
+                  ) : null}
+                </div>
+
+                <span className="text-[11px] text-fog-500">
+                  <span className="num">
+                    {projection.billedHours.toFixed(1)}
+                  </span>
+                  h and <span className="num">{tokens(def.tokenCost)}</span> tokens
+                  per run
+                </span>
+              </div>
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                <Stat
+                  icon="Gauge"
+                  label="hours reserved"
+                  value={`${batchHours.toFixed(1)}h`}
+                  tone="text-aqua-400"
+                />
+                <Stat
+                  icon="Coins"
+                  label="tokens burned"
+                  value={tokens(batchTokens)}
+                  tone="text-iris-300"
+                />
+                <Stat
+                  icon="TrendingUp"
+                  label={runs > 1 ? `payout if all ${runs} land` : "payout"}
+                  value={money2(batchPayout)}
+                  tone="text-mint-400"
+                />
+              </div>
+
+              <p className="mt-3 text-[11px] leading-relaxed text-fog-500">
+                {runs > 1 ? (
+                  <>
+                    A batch is just <span className="num">{runs}</span> ordinary
+                    runs launched together. Each one burns its own tokens,
+                    reserves its own hours and rolls its own odds of failing —
+                    they simply share one timer, one card, and one line in the
+                    ledger. All <span className="num">{runs}</span> finish in{" "}
+                    <span className="num">{duration(projection.seconds)}</span>,
+                    side by side.
+                  </>
+                ) : (
+                  <>
+                    You are set to launch a single run. Pick a batch size above to
+                    fire several copies of this contract at once — they burn
+                    tokens and reserve hours exactly as separate launches would,
+                    but they report as one card and one ledger line.
+                  </>
+                )}
+              </p>
+            </>
+          ) : (
+            <p className="text-xs leading-relaxed text-fog-400">
+              {readiness.ok
+                ? "There is only room for a single run right now. Buy more eligible tokens or more compute hours and this panel unlocks a batch."
+                : "This contract can't launch at all yet, so there is nothing to batch. Clear the shortfall above and the batch controls unlock."}
+            </p>
+          )}
+        </div>
+      </Section>
+
       {/* Economics */}
       <Section icon="Calculator" title="Project versus your rig">
         <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-abyss-600/50 bg-abyss-900/50 px-3 py-2 text-xs">
@@ -443,7 +568,7 @@ export function ProjectDetailModal({
 
         <div className="mt-3">
           <p className="mb-2 text-[10px] uppercase tracking-[0.12em] text-fog-500">
-            Before → after launching
+            Before → after launching{runs > 1 ? ` ×${runs}` : ""}
           </p>
           <div className="grid gap-2 sm:grid-cols-3">
             <Delta
@@ -459,7 +584,7 @@ export function ProjectDetailModal({
               before={hours(computeHours)}
               after={hours(hoursAfter)}
               tone="text-aqua-400"
-              warn={computeHours < projection.billedHours}
+              warn={computeHours < batchHours}
             />
             <Delta
               icon="Coins"
@@ -467,13 +592,13 @@ export function ProjectDetailModal({
               before={tokens(held)}
               after={tokens(tokensAfter)}
               tone="text-iris-300"
-              warn={held < def.tokenCost}
+              warn={held < batchTokens}
             />
           </div>
           <p className="mt-2 text-[11px] leading-relaxed text-fog-500">
             Launching reserves the pool hours and burns the tokens up front; the
-            payout credits the moment the run lands. The cash figure assumes the
-            delivery succeeds.
+            payout credits the moment the run lands. The cash figure assumes every
+            run in the batch delivers.
           </p>
         </div>
       </Section>
@@ -556,6 +681,30 @@ function Section({
       </h3>
       {children}
     </section>
+  );
+}
+
+function Stat({
+  icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: string;
+  label: string;
+  value: string;
+  tone: string;
+}) {
+  return (
+    <div className="rounded-xl border border-abyss-600/50 bg-abyss-900/60 px-3 py-2">
+      <div className="flex items-center gap-1.5">
+        <Icon name={icon} size={11} className="text-fog-500" />
+        <span className="text-[10px] uppercase tracking-[0.12em] text-fog-500">
+          {label}
+        </span>
+      </div>
+      <p className={cn("num mt-1 text-sm font-semibold", tone)}>{value}</p>
+    </div>
   );
 }
 

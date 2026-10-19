@@ -34,7 +34,7 @@ function SkeletonTile(): ReactElement {
  * The pre-hydration face of the dashboard.
  *
  * Persisted state is only read back on the client, so rendering it on the
- * server would flash the "$100 / 10h" starting position. This skeleton keeps
+ * server would flash the "$20 / 10h" starting position. This skeleton keeps
  * the first paint stable and honest instead.
  */
 export function DashboardSkeleton(): ReactElement {

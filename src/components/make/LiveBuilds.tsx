@@ -1,11 +1,12 @@
 "use client";
 
+import { BatchProgressCard } from "@/components/shared/BatchProgressCard";
 import { BuildProgressCard } from "@/components/shared/BuildProgressCard";
 import { Badge } from "@/components/ui/Badge";
 import { Card, SectionTitle } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/cn";
-import { hoursInUse, runRemaining } from "@/lib/economy";
+import { groupRuns, hoursInUse, runRemaining } from "@/lib/economy";
 import { duration, hours, money2 } from "@/lib/format";
 import { useNow } from "@/lib/hooks";
 import type { BuildRun } from "@/lib/types";
@@ -20,12 +21,15 @@ import type { BuildRun } from "@/lib/types";
 export function LiveBuilds({
   runs,
   onCancel,
+  onCancelBatch,
 }: {
   runs: BuildRun[];
   onCancel: (runId: string) => void;
+  onCancelBatch: (runIds: string[]) => void;
 }) {
   const now = useNow();
   const running = runs.filter((run) => run.status === "running");
+  const groups = groupRuns(running);
 
   const locked = now === null ? null : hoursInUse(runs, now);
   const payout = running.reduce((sum, run) => sum + run.payout, 0);
@@ -45,7 +49,7 @@ export function LiveBuilds({
         subtitle="Tokens are already burned and compute is reserved — these land on their own, whether or not you are watching."
         action={
           <Badge tone={running.length > 0 ? "aqua" : "neutral"} size="md" dot>
-            <span className="num">{running.length}</span> live
+            <span className="num">{groups.length}</span> live
           </Badge>
         }
         className="mb-3"
@@ -55,8 +59,14 @@ export function LiveBuilds({
         <SummaryTile
           icon="Loader2"
           label="running"
-          value={`${running.length}`}
-          hint={running.length === 1 ? "one build in flight" : "builds in flight"}
+          value={`${groups.length}`}
+          hint={
+            running.length === groups.length
+              ? running.length === 1
+                ? "one build in flight"
+                : "builds in flight"
+              : `${running.length} runs in ${groups.length} jobs`
+          }
           accent="#38bdf8"
         />
         <SummaryTile
@@ -98,9 +108,21 @@ export function LiveBuilds({
         </Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {running.map((run) => (
-            <div key={run.id} className="animate-rise">
-              <BuildProgressCard run={run} now={now} onCancel={onCancel} />
+          {groups.map((group) => (
+            <div key={group.key} className="animate-rise">
+              {group.batched ? (
+                <BatchProgressCard
+                  group={group}
+                  now={now}
+                  onAbort={onCancelBatch}
+                />
+              ) : (
+                <BuildProgressCard
+                  run={group.runs[0]}
+                  now={now}
+                  onCancel={onCancel}
+                />
+              )}
             </div>
           ))}
         </div>
