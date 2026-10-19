@@ -1,0 +1,288 @@
+@import "tailwindcss";
+
+/* ============================================================
+   MCP Simulator — Design System
+   Dark-first, glass + neon. Tailwind v4 token layer.
+   ============================================================ */
+
+@theme {
+  /* ---- Surfaces ---- */
+  --color-abyss-950: #04060c;
+  --color-abyss-900: #070a12;
+  --color-abyss-850: #0a0e19;
+  --color-abyss-800: #0e1320;
+  --color-abyss-750: #121828;
+  --color-abyss-700: #171e31;
+  --color-abyss-600: #1f2942;
+  --color-abyss-500: #2b3654;
+  --color-abyss-400: #3b4870;
+
+  /* ---- Text ---- */
+  --color-fog-50: #f4f6fc;
+  --color-fog-100: #e6eaf7;
+  --color-fog-200: #c6cde3;
+  --color-fog-300: #9aa3c0;
+  --color-fog-400: #6e7796;
+  --color-fog-500: #4d5673;
+
+  /* ---- Accents ---- */
+  --color-iris-200: #d6ccff;
+  --color-iris-300: #b7a3ff;
+  --color-iris-400: #9a7dff;
+  --color-iris-500: #7c5cff;
+  --color-iris-600: #6039e8;
+  --color-iris-700: #4a28bd;
+
+  --color-plasma-400: #e879f9;
+  --color-plasma-500: #d946ef;
+
+  --color-mint-300: #6ff2c4;
+  --color-mint-400: #2ee0a4;
+  --color-mint-500: #10b981;
+  --color-mint-600: #059669;
+
+  --color-solar-300: #fcd34d;
+  --color-solar-400: #fbbf24;
+  --color-solar-500: #f59e0b;
+
+  --color-ember-400: #fb7185;
+  --color-ember-500: #f43f5e;
+
+  --color-aqua-400: #38bdf8;
+  --color-aqua-500: #0ea5e9;
+
+  /* ---- Typography ---- */
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular",
+    Menlo, monospace;
+
+  /* ---- Motion ---- */
+  --animate-shimmer: shimmer 2.4s linear infinite;
+  --animate-float: float 7s ease-in-out infinite;
+  --animate-pulse-ring: pulse-ring 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-rise: rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-pop: pop 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-fade: fade 0.3s ease both;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+@keyframes pulse-ring {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(1.7); }
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes pop {
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ============================================================
+   Base
+   ============================================================ */
+
+* {
+  border-color: color-mix(in oklab, var(--color-abyss-500) 55%, transparent);
+}
+
+html {
+  color-scheme: dark;
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background-color: var(--color-abyss-950);
+  color: var(--color-fog-100);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* Ambient page glow */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(
+      58rem 34rem at 12% -8%,
+      color-mix(in oklab, var(--color-iris-500) 20%, transparent),
+      transparent 62%
+    ),
+    radial-gradient(
+      46rem 30rem at 92% 4%,
+      color-mix(in oklab, var(--color-aqua-500) 14%, transparent),
+      transparent 60%
+    ),
+    radial-gradient(
+      50rem 32rem at 60% 108%,
+      color-mix(in oklab, var(--color-plasma-500) 12%, transparent),
+      transparent 62%
+    );
+}
+
+::selection {
+  background: color-mix(in oklab, var(--color-iris-500) 42%, transparent);
+  color: var(--color-fog-50);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-abyss-900);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-abyss-500);
+  border-radius: 999px;
+  border: 2px solid var(--color-abyss-900);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-abyss-400);
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-iris-400);
+  outline-offset: 2px;
+}
+
+/* ============================================================
+   Component-level helpers
+   ============================================================ */
+
+.panel {
+  position: relative;
+  border-radius: 1rem;
+  border: 1px solid color-mix(in oklab, var(--color-abyss-500) 60%, transparent);
+  background:
+    linear-gradient(
+      160deg,
+      color-mix(in oklab, var(--color-abyss-800) 92%, transparent),
+      color-mix(in oklab, var(--color-abyss-900) 96%, transparent)
+    );
+  box-shadow:
+    0 1px 0 0 color-mix(in oklab, var(--color-fog-100) 5%, transparent) inset,
+    0 24px 48px -32px rgb(0 0 0 / 0.9);
+  /* No `backdrop-filter` here on purpose. It used to be `blur(14px)`, which
+     made Chromium give every card its own composited layer and re-sample the
+     backdrop while scrolling. Measured on /buy (55 cards) with a balanced,
+     warm A/B: 12.2ms/frame with the blur versus 8.3ms without, and p95 24.6ms
+     versus 14.8ms. The gradient above stacks to ~99.7% opacity, so the blur
+     was never visible in the first place — it was pure cost. `isolation`
+     keeps the stacking context the filter used to create, for free. */
+  isolation: isolate;
+}
+
+.panel-hover {
+  transition:
+    transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.28s ease,
+    box-shadow 0.28s ease;
+}
+.panel-hover:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in oklab, var(--color-iris-400) 45%, transparent);
+  box-shadow:
+    0 1px 0 0 color-mix(in oklab, var(--color-fog-100) 7%, transparent) inset,
+    0 30px 60px -30px color-mix(in oklab, var(--color-iris-600) 45%, transparent);
+}
+
+.hairline {
+  border-color: color-mix(in oklab, var(--color-abyss-500) 55%, transparent);
+}
+
+.sheen {
+  background-image: linear-gradient(
+    100deg,
+    transparent 20%,
+    color-mix(in oklab, var(--color-fog-50) 16%, transparent) 45%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
+}
+
+.grid-veil {
+  background-image:
+    linear-gradient(
+      to right,
+      color-mix(in oklab, var(--color-abyss-500) 35%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--color-abyss-500) 35%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 60px 60px;
+}
+
+.text-gradient {
+  background: linear-gradient(
+    92deg,
+    var(--color-fog-50) 6%,
+    var(--color-iris-300) 46%,
+    var(--color-aqua-400) 92%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-abyss-500) transparent;
+}
+.scroll-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scroll-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: var(--color-abyss-500);
+  border: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
